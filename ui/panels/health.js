@@ -184,7 +184,11 @@ function renderPrices(y, stats, d) {
   line(el, mp, 'l', 'var(--ink-2)', true);
   // direct labels at the right edge
   const lastRow = rows[rows.length - 1];
-  [['pFast', 'var(--s1)'], ['pMid', 'var(--s2)'], ['pSlow', 'var(--s3)']].forEach(([k, c]) => { if (lastRow[k]) el.append(svg('text', { class: 'yb-label', x: W - PM.r - 2, y: yy(lastRow[k]) - 3, 'text-anchor': 'end', fill: c }, `${k} ${usd(lastRow[k])}`)); });
+  // (spread apart when the three windows agree, so the labels never overprint each other)
+  const labels = [['pFast', 'var(--s1)'], ['pMid', 'var(--s2)'], ['pSlow', 'var(--s3)']].filter(([k]) => lastRow[k]).map(([k, c]) => ({ k, c, y: yy(lastRow[k]) - 3 })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 11);
+  for (let i = labels.length - 1; i >= 0; i--) { const top = i + 1 < labels.length ? labels[i + 1].y - 11 : H - PM.b - 2; labels[i].y = Math.min(labels[i].y, top); }
+  for (const l of labels) el.append(svg('text', { class: 'yb-label', x: W - PM.r - 2, y: l.y, 'text-anchor': 'end', fill: l.c }, `${l.k} ${usd(lastRow[l.k])}`));
   heightAxis(el, rows, x, W, H);
   hoverRows(el, rows, x, W, H, (r) => `height ${r.height}\npFast ${usd(r.pFast)}  pMid ${usd(r.pMid)}  pSlow ${usd(r.pSlow)}\npMint ${usd(r.pMint)}  pClaim ${usd(r.pClaim)}${r.sigmaMultBps ? `\nsigmaMult ${pct(r.sigmaMultBps)}` : ''}`);
   const lg = clear($('yb-price-legend'));
@@ -289,7 +293,9 @@ function renderTxs(y, s, d) {
   const t = clear($('yb-txs'));
   t.append(h('tr', {}, ...['height', 'txid', 'type', 'path', 'verdict', 'YED in', 'YED out', 'burned', 'fee YEC', 'payee', 'attest fee', 'attest payee', 'mempool'].map((c) => h('th', {}, c))));
   const inMempool = new Set((s.mempool?.txs || []).map((x) => x.txid));
-  for (const tx of (y.txs || []).slice(0, 60)) {
+  // the model orders by first sight (a tx seen in the mempool keeps its slot once mined): sort by height here, mempool rows first
+  const txs = (y.txs || []).slice().sort((a, b) => (b.height ?? Number.MAX_SAFE_INTEGER) - (a.height ?? Number.MAX_SAFE_INTEGER));
+  for (const tx of txs.slice(0, 60)) {
     const mp = inMempool.has(tx.txid) || !tx.height;
     const bad = tx.wouldBeRejected === true || (tx.verdict && tx.verdict !== 'ok' && tx.verdict !== 'unindexed');
     t.append(h('tr', { 'data-bad': bad ? '1' : '0' },

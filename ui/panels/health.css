@@ -23,7 +23,7 @@
 #panel-health .gridline { stroke: var(--grid); stroke-width: 1; }
 #panel-health .axis { stroke: var(--axis); stroke-width: 1; }
 #panel-health .empty { fill: var(--muted); font-size: 12px; }
-#panel-health .yb-label { font-size: 10px; font-weight: 600; }
+#panel-health .yb-label { font-size: 10px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 #panel-health .yb-marker { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 2 2; }
 #panel-health .yb-rejected { stroke: var(--critical); stroke-width: 2; }
 #panel-health .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin-top: 4px; }
