@@ -119,8 +119,10 @@ function renderLanes(y, info, d) {
   const dx = Math.max(1, (W - LM.l - LM.r) / (rows.length - 1));
   // activation lane: colour by status
   const actColour = { signaling: 'var(--s4)', locked_in: 'var(--s2)', active: 'var(--good)' };
+  // live rows (from yed_getstats, `live: true`) carry no activation field: carry the last known status forward
+  let lastAct = null;
   for (const r of rows) {
-    const st = r.activation?.status;
+    const st = r.activation?.status || lastAct; lastAct = st;
     el.append(svg('rect', { x: x(r.height) - dx / 2, y: LM.t + 1, width: dx + 0.5, height: LH - 3, fill: actColour[st] || 'var(--mark)', 'fill-opacity': st === 'active' ? 0.55 : 0.85 }));
   }
   // arming lane: current status back to the first known change (yb_state events); before that, unknown = hatched
