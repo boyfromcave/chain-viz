@@ -73,11 +73,21 @@ pub enum EventKind {
     },
     /// A block that was on some node's best chain and has since been left for another branch
     /// (it is now a side tip, or gone from the tips altogether).
-    Orphaned { hash: String },
+    Orphaned {
+        hash: String,
+    },
     /// A node's tip moved to a block that is not a child of its previous tip.
-    Reorg { depth: u64, from: String, to: String, #[serde(rename = "toHeight")] to_height: u64 },
+    Reorg {
+        depth: u64,
+        from: String,
+        to: String,
+        #[serde(rename = "toHeight")]
+        to_height: u64,
+    },
     /// A node's best tip changed (every change, including plain extension).
-    Tip { hash: String },
+    Tip {
+        hash: String,
+    },
     MempoolAdd {
         txid: String,
         size: u64,
@@ -106,15 +116,25 @@ pub enum EventKind {
         info: Option<Value>,
     },
     /// A `yed_getinfo`/`yed_getstats` field changed on a node (`field` is the JSON name).
-    YbState { field: String, from: Value, to: Value },
+    YbState {
+        field: String,
+        from: Value,
+        to: Value,
+    },
     /// A price snapshot (C3).
     Price(Value),
     /// A `yed_getstats` snapshot (C3).
     Stats(Value),
     /// A block a node rejected under enforcement, with `yed_getblockverdict`'s answer.
-    RejectedBlock { hash: String, verdict: Value },
+    RejectedBlock {
+        hash: String,
+        verdict: Value,
+    },
     /// Two healthy nodes on the same tip disagree on `yed_getstatehash` (C3).
-    StatehashMismatch { hash: String, hashes: Value },
+    StatehashMismatch {
+        hash: String,
+        hashes: Value,
+    },
     Attestor(Value),
     Vault(Value),
     /// The devnet's `heartbeat.json`.
@@ -124,7 +144,9 @@ pub enum EventKind {
     /// A yolo `/status` sample (C4).
     YoloStatus(Value),
     /// Free text from the collector (a node went away, a source switched, …).
-    Note { text: String },
+    Note {
+        text: String,
+    },
 }
 
 impl Event {
@@ -156,10 +178,7 @@ impl Event {
 
 /// Seconds since the epoch, fractional.
 pub fn now() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
 }
 
 /// `--record <dir>`: appends one JSON line per event to `<dir>/session.jsonl`.
@@ -213,13 +232,7 @@ mod tests {
 
     #[test]
     fn wire_shape() {
-        let e = Event {
-            seq: 3,
-            ts: 1.5,
-            height: Some(7),
-            node: Some("2".into()),
-            kind: EventKind::Reorg { depth: 2, from: "a".into(), to: "b".into(), to_height: 9 },
-        };
+        let e = Event { seq: 3, ts: 1.5, height: Some(7), node: Some("2".into()), kind: EventKind::Reorg { depth: 2, from: "a".into(), to: "b".into(), to_height: 9 } };
         let v = serde_json::to_value(&e).unwrap();
         assert_eq!(v["kind"], "reorg");
         assert_eq!(v["depth"], 2);

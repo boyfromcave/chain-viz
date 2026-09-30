@@ -104,7 +104,9 @@ async fn main() {
     let filter = tracing_subscriber::EnvFilter::try_new(&cli.log).unwrap_or_else(|_| fail("bad --log"));
     tracing_subscriber::fmt().with_env_filter(filter).with_target(false).with_writer(std::io::stderr).init();
 
-    for (flag, set) in [("--replay", cli.replay.is_some()), ("--yolo", !cli.yolo.is_empty()), ("--lightwalletd", cli.lightwalletd.is_some()), ("--public", cli.public), ("--export", cli.export.is_some())] {
+    for (flag, set) in
+        [("--replay", cli.replay.is_some()), ("--yolo", !cli.yolo.is_empty()), ("--lightwalletd", cli.lightwalletd.is_some()), ("--public", cli.public), ("--export", cli.export.is_some())]
+    {
         if set {
             warn!("{} is not implemented yet (ignored)", flag);
         }
@@ -131,11 +133,8 @@ async fn main() {
     if nodes.is_empty() {
         fail("no nodes: pass --devnet <dir> or --nodes <url>[,<url>…]");
     }
-    let zmq: HashMap<String, String> = cli
-        .zmq
-        .iter()
-        .map(|s| s.split_once('=').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_else(|| fail(&format!("--zmq {}: want <node id>=<tcp url>", s))))
-        .collect();
+    let zmq: HashMap<String, String> =
+        cli.zmq.iter().map(|s| s.split_once('=').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_else(|| fail(&format!("--zmq {}: want <node id>=<tcp url>", s)))).collect();
     for n in &mut nodes {
         if let Some(u) = zmq.get(&n.id) {
             n.zmq = Some(u.clone());

@@ -101,13 +101,7 @@ impl MempoolModel {
     pub fn snapshot(&self) -> MempoolSnapshot {
         let mut txs: Vec<MempoolTx> = self.txs.values().cloned().collect();
         txs.sort_by(|a, b| a.time.cmp(&b.time).then_with(|| a.txid.cmp(&b.txid)));
-        MempoolSnapshot {
-            count: txs.len(),
-            bytes: txs.iter().map(|t| t.size).sum(),
-            fee_total: txs.iter().map(|t| t.fee).sum(),
-            nodes: self.reported.len(),
-            txs,
-        }
+        MempoolSnapshot { count: txs.len(), bytes: txs.iter().map(|t| t.size).sum(), fee_total: txs.iter().map(|t| t.fee).sum(), nodes: self.reported.len(), txs }
     }
 }
 
