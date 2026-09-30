@@ -143,8 +143,9 @@ All JSON. Under `--public` every response and WebSocket frame is redacted (URLs,
   slow client `{"kind":"lagged","dropped","seq"}`, after which resync via `/api/events?since=`.
 * **`GET /api/yellowback`** — the health panel's slice, fetched once per block:
   `{seq, tip, yedInfo, yellowback{leader, stats{<node>: yed_getstats}, statehash{<node>},
-  statehashAgree, price, activation, miners[], attestors[], vaults[], claimable[], history[],
-  historyFrom, txs[], rejected[], mockPrice}, blocks[{hash,height,time,txCount,yb}]}`.
+  statehash_agree, price, attestPrices, activation, haltBits, miners[], attestors[], vaults[],
+  claimable[], history[], historyFrom, txs[], rejected[], mockPrice},
+  blocks[{hash,height,time,txCount,yb}]}`.
 * **`GET /api/revenue?from=<h>&to=<h>&by=payoutKey|attestor|block`** — the ledger rolled up
   over `[from, to]` (default: the whole kept window):
   `{from, to, by, window{from,to}, priceLabel: "at pMint",
