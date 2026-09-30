@@ -85,9 +85,14 @@ function pill(label, on, level) { return h('span', { class: 'yb-pill', 'data-on'
 function renderRibbon(y, info, stats, d) {
   const el = clear($('yb-ribbon')); if (!info) { el.append(h('span', { class: 'hint' }, 'no node with yed_getinfo')); return; }
   const act = info.activation || {}, att = info.attest || {};
+  const suspended = !!stats?.haltMask?.includes('ENFORCEMENT');
   el.append(
     pill(info.healthy ? 'healthy' : `unhealthy ${info.unhealthyReason || ''}`, info.healthy, info.healthy ? 'good' : 'critical'),
-    pill(info.enforcing ? 'enforcing' : 'not enforcing', info.enforcing, info.enforcing ? 'good' : 'warning'),
+    // ACT-6: the ENFORCEMENT halt bit means EnforcementOn() is false at block level even while
+    // yed_getinfo.enforcing (the node's own switch) stays true — a burn-less vault spend would be
+    // accepted for as long as it lasts, so it outranks the node flag (plan finding C-F34).
+    suspended ? pill('enforcement SUSPENDED (ACT-6)', true, 'critical')
+              : pill(info.enforcing ? 'enforcing' : 'not enforcing', info.enforcing, info.enforcing ? 'good' : 'warning'),
     pill('valve tripped', info.valveTripped, 'critical'), pill('sunset', info.sunset, 'warning'), pill('abandoned', info.abandoned, 'critical'),
     h('span', { class: 'yb-sep' }),
     h('span', { class: 'yb-state' }, h('b', {}, 'activation'), ` ${(act.status || '?').toUpperCase()} `, h('span', { class: 'muted' }, `${act.signalCount ?? '–'}/${act.window ?? '–'} signals · lock-in ${act.lockInHeight ?? '–'} · active ${act.activateHeight ?? '–'}`)),
