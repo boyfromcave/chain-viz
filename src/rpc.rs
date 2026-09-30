@@ -35,7 +35,7 @@ pub struct NodeConfig {
 /// Parse `<dir>/devnet.json` as `yellowback-devnet up` writes it (`yellowback-devnet:723-731`):
 /// `rpc: {"<n>": {url, port, user, password}}`, plus the per-node map C4's devnet adds,
 /// `nodes: {"<n>": {zmq: {hashblock, hashtx}}}` (both URLs equal: ycashd publishes every topic
-/// on one PUB socket per address, C-F-1). An older flat `zmq: {"<n>": "tcp://…"}` map is the
+/// on one PUB socket per address, C-F29). An older flat `zmq: {"<n>": "tcp://…"}` map is the
 /// fallback. Node ids come back in numeric order.
 pub fn nodes_from_devnet(devnet: &Value) -> Result<Vec<NodeConfig>, String> {
     let rpc = devnet.get("rpc").and_then(Value::as_object).ok_or("devnet.json: no \"rpc\" map")?;
