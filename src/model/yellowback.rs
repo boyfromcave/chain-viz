@@ -215,6 +215,8 @@ pub struct YellowbackModel {
     order: Vec<String>,
     /// Txids whose outputs were looked at (ordinary or Yellowback), so no tx is fetched twice.
     checked: BTreeSet<String>,
+    /// Raw hex of mempool Yellowback txs a stock node classified, until a `yed_*` node validates.
+    raw: HashMap<String, String>,
     pub rejected: Vec<RejectedBlock>,
     pub mock_price: Option<f64>,
     pub attest_prices: BTreeMap<String, f64>,
@@ -245,6 +247,7 @@ impl YellowbackModel {
             txs: HashMap::new(),
             order: Vec::new(),
             checked: BTreeSet::new(),
+            raw: HashMap::new(),
             rejected: Vec::new(),
             mock_price: None,
             attest_prices: BTreeMap::new(),
@@ -452,6 +455,16 @@ impl YellowbackModel {
         self.checked.insert(txid.to_string())
     }
 
+    pub fn keep_raw(&mut self, txid: &str, hex: &str) {
+        self.raw.insert(txid.to_string(), hex.to_string());
+    }
+    pub fn raw_hex(&self, txid: &str) -> Option<String> {
+        self.raw.get(txid).cloned()
+    }
+    pub fn drop_raw(&mut self, txid: &str) {
+        self.raw.remove(txid);
+    }
+
     pub fn tx(&self, txid: &str) -> Option<&YbTx> {
         self.txs.get(txid)
     }
@@ -553,7 +566,7 @@ mod tests {
     fn statehash_mismatch_once_per_block() {
         let mut m = YellowbackModel::default();
         let healthy: BTreeSet<String> = ["0", "2", "3"].iter().map(|s| s.to_string()).collect();
-        let h = |n: &str, s: &str| YedStateHash { height: 5, blockhash: "b".into(), statehash: s.into() };
+        let h = |_n: &str, s: &str| YedStateHash { height: 5, blockhash: "b".into(), statehash: s.into() };
         assert!(m.on_statehash("0", h("0", "aa"), &healthy).is_none());
         assert_eq!(m.statehash_agree(&healthy), None);
         assert!(m.on_statehash("2", h("2", "aa"), &healthy).is_none());

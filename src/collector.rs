@@ -5,21 +5,23 @@
 //! `getrawmempool true`, one `yed_getinfo`; `getblock` once per new hash; `getchaintips` only
 //! when the head moved.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::bus::Bus;
 use crate::events::{now, EventKind};
+use crate::classify;
 use crate::model::chain::{ChainModel, ChainSnapshot, Emitted};
 use crate::model::mempool::{MempoolModel, MempoolSnapshot};
-use crate::rpc::{Block, NodeConfig, RpcClient, RpcError, YedInfo};
+use crate::model::yellowback::{BlockYb, YbTx, YellowbackModel, YellowbackSnapshot, HISTORY_PAGE, VAULT_PAGE};
+use crate::rpc::{Block, BlockFull, NodeConfig, RpcClient, RpcError, YedInfo};
 use crate::source::poll::PollSource;
 use crate::source::zmq::ZmqSource;
 use crate::source::{Source, Wake};
@@ -56,6 +58,8 @@ pub struct Model {
     /// The last `yed_getinfo` per node, whole (C3 models it; C1 only diffs the counters).
     pub yed_info: BTreeMap<String, YedInfo>,
     pub devnet: BTreeMap<String, Value>,
+    /// The Yellowback health model (C3).
+    pub yellowback: YellowbackModel,
 }
 
 #[derive(Serialize)]
@@ -72,9 +76,19 @@ pub struct Snapshot {
     #[serde(rename = "yedInfo")]
     pub yed_info: BTreeMap<String, YedInfo>,
     pub devnet: BTreeMap<String, Value>,
+    pub yellowback: YellowbackSnapshot,
 }
 
 impl Model {
+    /// Nodes whose `yed_getinfo` says `healthy` and that answered their last poll.
+    pub fn healthy(&self) -> BTreeSet<String> {
+        self.nodes.values().filter(|n| n.up && self.yed_info.get(&n.id).map(|i| i.healthy).unwrap_or(false)).map(|n| n.id.clone()).collect()
+    }
+    /// The lowest-id node that is up and has `yed_*`: whose chain-wide answers are shown.
+    pub fn leader(&self) -> Option<String> {
+        self.nodes.values().filter(|n| n.up && n.yellowback == Some(true)).map(|n| n.id.clone()).min_by_key(|id| id.parse::<u64>().unwrap_or(u64::MAX))
+    }
+
     pub fn snapshot(&self, seq: u64, blocks: usize) -> Snapshot {
         Snapshot {
             version: env!("CARGO_PKG_VERSION"),
@@ -87,6 +101,7 @@ impl Model {
             mempool: self.mempool.snapshot(),
             yed_info: self.yed_info.clone(),
             devnet: self.devnet.clone(),
+            yellowback: self.yellowback.snapshot(self.leader(), &self.healthy()),
         }
     }
 }
@@ -183,7 +198,7 @@ impl Collector {
             // competing block that reaches a node as a header only (`valid-headers`) moves no
             // head anywhere, and getchaintips walks the whole block index, so not every poll.
             if st.head.as_deref() != Some(&best) || st.ticks % TIPS_EVERY == 0 {
-                let path = if st.head.as_deref() != Some(&best) {
+                let full = if st.head.as_deref() != Some(&best) {
                     let first = st.head.is_none();
                     let guard = if first { Some(self.backfill.lock().await) } else { None };
                     let path = self.fetch_path(client, &best, first).await?;
@@ -192,6 +207,7 @@ impl Collector {
                 } else {
                     Vec::new()
                 };
+                let path: Vec<Block> = full.iter().map(block_of).collect();
                 let tips = client.get_chain_tips().await?;
                 let emitted = {
                     let mut m = self.model.write().await;
@@ -205,8 +221,17 @@ impl Collector {
                     }
                 }
                 self.bus.publish_all(emitted);
-                st.head = Some(best);
+                let moved = st.head.as_deref() != Some(&best);
+                st.head = Some(best.clone());
                 st.side_tips = tips.iter().filter(|t| t.status != "active").map(|t| t.hash.clone()).collect();
+                // Yellowback: classify every block's transactions locally, then (on a node with
+                // yed_*) one yed_gettag per block and one yed_gettxinfo per Yellowback tx.
+                for b in &full {
+                    self.classify_block(client, st, b).await?;
+                }
+                if moved && st.yed_enabled == Some(true) {
+                    self.on_block_yed(client, st, &best).await?;
+                }
             }
             if st.yed_enabled != Some(false) {
                 match client.yed_getinfo().await {
@@ -229,18 +254,246 @@ impl Collector {
                 let Model { chain, mempool, .. } = &mut *m;
                 mempool.on_snapshot(&node, &entries, now(), |t| chain.is_mined(t))
             };
+            let added: Vec<String> = emitted.iter().filter_map(|e| if let EventKind::MempoolAdd { txid, .. } = &e.kind { Some(txid.clone()) } else { None }).collect();
             self.bus.publish_all(emitted);
+            self.classify_mempool(client, st, added).await?;
         }
         Ok(())
     }
 
+    /// The Yellowback transactions of one fetched block: payload scan (no RPC), then on a node
+    /// with `yed_*`, `yed_gettag` once per block hash and `yed_gettxinfo` once per txid.
+    async fn classify_block(&self, client: &RpcClient, st: &NodeState, b: &BlockFull) -> Result<(), RpcError> {
+        let node = client.id().to_string();
+        let (needs_tag, pending): (bool, Vec<YbTx>) = {
+            let mut m = self.model.write().await;
+            let Model { chain, yellowback, .. } = &mut *m;
+            let Some(info) = chain.block_mut(&b.hash) else { return Ok(()) };
+            if info.yb.is_none() {
+                let txs: Vec<YbTx> = b.tx.iter().filter_map(|t| classify::find_payload(t).map(|p| yellowback.tx(&t.txid).cloned().unwrap_or_else(|| YbTx::from_payload(&t.txid, p)))).collect();
+                for t in &txs {
+                    yellowback.upsert_tx(t.clone());
+                }
+                info.yb = Some(BlockYb { txs, ..Default::default() });
+            }
+            let yb = info.yb.as_ref().expect("set above");
+            (!yb.tagged, yb.txs.iter().filter(|t| t.height.is_none() || t.info.is_none()).cloned().collect())
+        };
+        if st.yed_enabled != Some(true) || (!needs_tag && pending.is_empty()) {
+            return Ok(());
+        }
+        let tag = if needs_tag { Some(client.yed_gettag(&b.hash).await?) } else { None };
+        let mut done = Vec::new();
+        for mut t in pending {
+            match client.yed_gettxinfo(&t.txid).await {
+                Ok(info) => {
+                    t.apply(&info, Some(b.height));
+                    done.push(t);
+                }
+                Err(e) if matches!(e, RpcError::Node { .. }) => {
+                    // The index has no row (a non-Yellowback tx by the node's rules, or a
+                    // height the index has not applied yet): keep the payload-only view.
+                    debug!(node = %node, "yed_gettxinfo {}: {}", short(&t.txid), e);
+                    t.height = Some(b.height);
+                    t.verdict = if t.verdict.is_empty() { "unindexed".into() } else { t.verdict };
+                    done.push(t);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        let mut emitted = Vec::new();
+        {
+            let mut m = self.model.write().await;
+            let Model { chain, yellowback, .. } = &mut *m;
+            if let Some(info) = chain.block_mut(&b.hash).and_then(|i| i.yb.as_mut()) {
+                if let Some(tag) = tag {
+                    info.miner = tag.get("payoutAddress").and_then(Value::as_str).map(str::to_string).filter(|_| tag.get("found").and_then(Value::as_bool).unwrap_or(false));
+                    info.tag = Some(tag);
+                    info.tagged = true;
+                }
+                for t in done {
+                    if let Some(slot) = info.txs.iter_mut().find(|x| x.txid == t.txid) {
+                        *slot = t.clone();
+                    }
+                    emitted.push(Emitted { height: Some(b.height), node: Some(node.clone()), kind: t.event() });
+                    yellowback.upsert_tx(t);
+                }
+            }
+        }
+        self.bus.publish_all(emitted);
+        Ok(())
+    }
+
+    /// New mempool txids: `getrawtransaction` once per txid (any node), payload scan; for a
+    /// Yellowback tx on a node with `yed_*`, `yed_decodepayload` + `yed_validaterawtransaction`.
+    async fn classify_mempool(&self, client: &RpcClient, st: &NodeState, added: Vec<String>) -> Result<(), RpcError> {
+        let node = client.id().to_string();
+        let mut todo: Vec<String> = Vec::new();
+        {
+            let mut m = self.model.write().await;
+            for t in added {
+                if m.yellowback.check(&t) {
+                    todo.push(t);
+                }
+            }
+            // Yellowback txs a stock node classified earlier and nobody validated yet.
+            if st.yed_enabled == Some(true) {
+                let Model { mempool, yellowback, .. } = &mut *m;
+                for t in mempool.snapshot().txs {
+                    if let Some(yb) = &t.yb {
+                        if yb.info.is_none() && yellowback.raw_hex(&t.txid).is_some() && !todo.contains(&t.txid) {
+                            todo.push(t.txid.clone());
+                        }
+                    }
+                }
+            }
+        }
+        for txid in todo {
+            let raw = {
+                let hex = self.model.read().await.yellowback.raw_hex(&txid);
+                match hex {
+                    Some(h) => h,
+                    None => match client.get_raw_transaction(&txid).await {
+                        Ok(tx) => {
+                            if let Some(p) = classify::find_payload(&tx) {
+                                let mut m = self.model.write().await;
+                                let yb = YbTx::from_payload(&txid, p);
+                                m.yellowback.upsert_tx(yb.clone());
+                                m.yellowback.keep_raw(&txid, &tx.hex);
+                                m.mempool.set_yb(&txid, yb);
+                                tx.hex
+                            } else {
+                                continue;
+                            }
+                        }
+                        Err(RpcError::Node { .. }) => continue, // gone from the mempool between the two calls
+                        Err(e) => return Err(e),
+                    },
+                }
+            };
+            if st.yed_enabled != Some(true) {
+                continue;
+            }
+            let decoded = client.yed_decodepayload(&raw).await.ok();
+            let mut verdict = match client.yed_validaterawtransaction(&raw).await {
+                Ok(v) => v,
+                Err(RpcError::Node { message, .. }) => json!({"valid": false, "verdict": message}),
+                Err(e) => return Err(e),
+            };
+            if let (Some(o), Some(d)) = (verdict.as_object_mut(), decoded) {
+                o.insert("decoded".into(), d);
+            }
+            let event = {
+                let mut m = self.model.write().await;
+                let Some(mut yb) = m.yellowback.tx(&txid).cloned() else { continue };
+                yb.apply(&verdict, None);
+                yb.height = None;
+                m.yellowback.upsert_tx(yb.clone());
+                m.yellowback.drop_raw(&txid);
+                m.mempool.set_yb(&txid, yb.clone());
+                Emitted { height: None, node: Some(node.clone()), kind: yb.event() }
+            };
+            self.bus.publish_all(vec![event]);
+        }
+        Ok(())
+    }
+
+    /// Per block on a node with `yed_*`: `yed_getstats` and `yed_getstatehash`; the leader
+    /// adds `yed_getprice`, `yed_getactivation`, `yed_listminers`, `yed_listattestors`,
+    /// `yed_listclaimable`, `yed_listvaults` when the vault counts changed, and the one-time
+    /// `yed_gethistory` backfill.
+    async fn on_block_yed(&self, client: &RpcClient, st: &mut NodeState, best: &str) -> Result<(), RpcError> {
+        let node = client.id().to_string();
+        let leader = {
+            let m = self.model.read().await;
+            let l = m.leader();
+            l.is_none() || l.as_deref() == Some(&node)
+        };
+        let stats = client.yed_getstats().await?;
+        let mut emitted = Vec::new();
+        let (stale, backfill_from) = {
+            let mut m = self.model.write().await;
+            emitted.extend(m.yellowback.on_stats(&node, stats.clone(), leader));
+            let start = m.yed_info.get(&node).and_then(|i| i.params.get("startHeight")).and_then(Value::as_u64).unwrap_or(1);
+            let from = if leader && m.yellowback.backfilled_to.is_none() { Some(m.yellowback.backfill_from(stats.height, start)) } else { None };
+            (m.yellowback.vaults_stale(&stats), from)
+        };
+        match client.yed_getstatehash().await {
+            Ok(h) => {
+                let mut m = self.model.write().await;
+                let healthy = m.healthy();
+                if let Some(e) = m.yellowback.on_statehash(&node, h, &healthy) {
+                    if let EventKind::StatehashMismatch { hash, .. } = &e.kind {
+                        warn!("statehash mismatch on {}", short(hash));
+                    }
+                    emitted.push(e);
+                }
+            }
+            Err(e) if matches!(e, RpcError::Node { .. }) => debug!(node = %node, "yed_getstatehash: {}", e),
+            Err(e) => return Err(e),
+        }
+        self.bus.publish_all(std::mem::take(&mut emitted));
+        if !leader {
+            return Ok(());
+        }
+        if let Some(from) = backfill_from {
+            let to = stats.height;
+            info!(node = %node, "yed_gethistory backfill {}..{}", from, to);
+            let mut lo = from;
+            while lo <= to {
+                let hi = (lo + HISTORY_PAGE - 1).min(to);
+                let rows = client.yed_gethistory(lo, hi).await?;
+                self.model.write().await.yellowback.on_history(rows);
+                lo = hi + 1;
+            }
+            self.model.write().await.yellowback.backfilled_to = Some(to);
+        }
+        let price = client.yed_getprice(None).await?;
+        let activation = client.yed_getactivation().await?;
+        let miners = client.yed_listminers().await?;
+        let attestors = client.yed_listattestors().await?;
+        let claimable = client.yed_listclaimable().await?;
+        let vaults = if stale {
+            let mut all = Vec::new();
+            let mut skip = 0;
+            loop {
+                let page = client.yed_listvaults("", VAULT_PAGE, skip).await?;
+                let n = page.len() as u64;
+                all.extend(page);
+                if n < VAULT_PAGE {
+                    break;
+                }
+                skip += n;
+            }
+            Some(all)
+        } else {
+            None
+        };
+        {
+            let mut m = self.model.write().await;
+            emitted.push(m.yellowback.on_price(&node, price));
+            m.yellowback.activation = Some(activation);
+            m.yellowback.miners = miners;
+            m.yellowback.claimable = claimable;
+            emitted.extend(m.yellowback.on_attestors(&node, stats.height, attestors));
+            if let Some(v) = vaults {
+                emitted.extend(m.yellowback.on_vaults(&node, v, &stats));
+            }
+        }
+        st.yed_blocks += 1;
+        self.bus.publish_all(emitted);
+        let _ = best;
+        Ok(())
+    }
+
     /// The blocks from the last one the model knows (exclusive) to `best`, oldest first.
-    async fn fetch_path(&self, client: &RpcClient, best: &str, first: bool) -> Result<Vec<Block>, RpcError> {
+    /// `getblock … 2`: one call per block, the decoded transactions feed the classifier.
+    async fn fetch_path(&self, client: &RpcClient, best: &str, first: bool) -> Result<Vec<BlockFull>, RpcError> {
         let limit = if first { BACKFILL } else { u64::MAX };
         let mut path = Vec::new();
         let mut hash = best.to_string();
         loop {
-            let b = client.get_block(&hash).await?;
+            let b = client.get_block_full(&hash).await?;
             let prev = b.previousblockhash.clone();
             path.push(b);
             match prev {
@@ -272,8 +525,12 @@ impl Collector {
                 }
             }
         }
-        let rejected_grew = prev.map(|p| info.rejected_blocks > p.rejected_blocks).unwrap_or(false);
-        self.model.write().await.yed_info.insert(node.clone(), info.clone());
+        let rejected_grew = prev.as_ref().map(|p| info.rejected_blocks > p.rejected_blocks).unwrap_or(false);
+        {
+            let mut m = self.model.write().await;
+            emitted.extend(m.yellowback.on_info(&node, prev.as_ref(), &info));
+            m.yed_info.insert(node.clone(), info.clone());
+        }
         if rejected_grew {
             // Ask the verdict of every side tip this node holds that we have not asked about.
             let tips: Vec<String> = st.side_tips.iter().filter(|h| !st.verdicts.contains(*h)).cloned().collect();
@@ -282,8 +539,14 @@ impl Collector {
                     Ok(v) => {
                         st.verdicts.insert(hash.clone());
                         if v.block_invalid {
-                            let height = self.model.read().await.chain.block(&hash).map(|b| b.height);
-                            emitted.push(Emitted { height, node: Some(node.clone()), kind: EventKind::RejectedBlock { hash, verdict: serde_json::to_value(&v).unwrap_or(Value::Null) } });
+                            let verdict = serde_json::to_value(&v).unwrap_or(Value::Null);
+                            let mut m = self.model.write().await;
+                            let height = m.chain.block(&hash).map(|b| b.height);
+                            if let Some(b) = m.chain.block_mut(&hash) {
+                                b.yb.get_or_insert_with(BlockYb::default).rejected = true;
+                            }
+                            m.yellowback.note_rejected(&hash, &node, verdict.clone());
+                            emitted.push(Emitted { height, node: Some(node.clone()), kind: EventKind::RejectedBlock { hash, verdict } });
                         }
                     }
                     Err(e) => warn!(node = %node, "yed_getblockverdict {}: {}", short(&hash), e),
@@ -311,8 +574,52 @@ impl Collector {
                 let kind = if name == "heartbeat" { EventKind::DevnetHeartbeat(v) } else { EventKind::DevnetSim(v) };
                 self.bus.publish(height, None, kind);
             }
+            // The fed prices: `mock-price` (the pools) and `attest-price-N` (each attestor).
+            let mut attest = BTreeMap::new();
+            if let Ok(mut rd) = tokio::fs::read_dir(&dir).await {
+                while let Ok(Some(e)) = rd.next_entry().await {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if let Some(n) = name.strip_prefix("attest-price-") {
+                        if let Some(p) = read_price(&e.path()).await {
+                            attest.insert(n.to_string(), p);
+                        }
+                    }
+                }
+            }
+            let mock = read_price(&dir.join("mock-price")).await;
+            let changed = {
+                let mut m = self.model.write().await;
+                let changed = m.yellowback.mock_price != mock || m.yellowback.attest_prices != attest;
+                m.yellowback.mock_price = mock;
+                m.yellowback.attest_prices = attest.clone();
+                changed
+            };
+            if changed {
+                self.bus.publish(None, None, EventKind::Price(json!({"source": "devnet", "mockPrice": mock, "attestPrices": attest})));
+            }
             tokio::time::sleep(self.poll).await;
         }
+    }
+}
+
+async fn read_price(path: &std::path::Path) -> Option<f64> {
+    tokio::fs::read_to_string(path).await.ok()?.trim().parse().ok()
+}
+
+/// The header view of a `getblock … 2` answer.
+fn block_of(b: &BlockFull) -> Block {
+    Block {
+        hash: b.hash.clone(),
+        height: b.height,
+        confirmations: b.confirmations,
+        size: b.size,
+        version: b.extra.get("version").and_then(Value::as_i64).unwrap_or(0),
+        time: b.time,
+        chainwork: b.chainwork.clone(),
+        tx: b.tx.iter().map(|t| t.txid.clone()).collect(),
+        previousblockhash: b.previousblockhash.clone(),
+        nextblockhash: b.extra.get("nextblockhash").and_then(Value::as_str).map(str::to_string),
+        extra: b.extra.clone(),
     }
 }
 
@@ -324,6 +631,8 @@ struct NodeState {
     yed_enabled: Option<bool>,
     side_tips: Vec<String>,
     verdicts: HashSet<String>,
+    /// Blocks this node ran the per-block `yed_*` reads for.
+    yed_blocks: u64,
 }
 
 pub fn short(hash: &str) -> &str {
