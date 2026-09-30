@@ -25,9 +25,11 @@ async function load() {
 }
 
 export function init() {
-  if (!document.querySelector('link[href="/ui/panels/health.css"]')) document.head.append(h('link', { rel: 'stylesheet', href: '/ui/panels/health.css' }));
-  const main = document.querySelector('main.grid') || document.body;
-  main.append(h('section', { id: 'panel-health', class: 'panel span-2' },
+  // The section is built here so the shell (index.html) needs no change; under the fake DOM of
+  // qa/ui-smoke.mjs there is no head/body, so the ids are registered on the fly.
+  if (document.head && !document.querySelector('link[href="/ui/panels/health.css"]')) document.head.append(h('link', { rel: 'stylesheet', href: '/ui/panels/health.css' }));
+  const main = document.querySelector?.('main.grid') || document.body;
+  const section = h('section', { id: 'panel-health', class: 'panel span-2' },
     h('div', { class: 'panel-head' }, h('h2', {}, 'Yellowback health'), h('span', { id: 'yb-hint', class: 'hint' }, 'yed_getinfo · yed_getstats · yed_getprice · yed_gethistory · yed_listvaults · yed_listattestors · yed_getstatehash')),
     h('div', { id: 'yb-ribbon', class: 'yb-ribbon' }),
     h('div', { id: 'yb-alarm', class: 'yb-alarm', hidden: true }),
@@ -39,8 +41,16 @@ export function init() {
       h('div', { class: 'yb-card' }, h('h3', {}, 'Attestors'), h('table', { id: 'yb-attestors', class: 'table' })),
       h('div', { class: 'yb-card' }, h('h3', {}, 'Consistency and enforcement'), h('div', { id: 'yb-consistency' })),
       h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Yellowback transactions'), h('span', { class: 'hint' }, 'newest first · mempool rows carry the dry-run verdict (yed_validaterawtransaction)'), h('table', { id: 'yb-txs', class: 'table' }))),
-  ));
+  );
+  if (main) main.append(section); else registerIds(section);
   load();
+}
+
+// Fake-DOM fallback: make getElementById find this panel's ids without a document tree.
+function registerIds(root) {
+  const ids = new Map(); const idOf = (n) => n.id || n.attrs?.id || n.getAttribute?.('id'); const walk = (n) => { if (idOf(n)) ids.set(idOf(n), n); for (const c of n.children || []) walk(c); }; walk(root);
+  const orig = document.getElementById.bind(document);
+  document.getElementById = (id) => (ids.has(id) ? ids.get(id) : orig(id));
 }
 
 export function render({ store, now }) {
@@ -244,7 +254,7 @@ function renderVaults(y, stats, d) {
   }
   const lg = clear($('yb-vault-legend'));
   for (const c of ['A', 'B', 'C']) lg.append(h('span', {}, h('i', { style: `background:${cls[c]}` }), `class ${c}`));
-  lg.append(h('span', {}, h('i', { class: 'ring' }), 'claimable (yed_listclaimable)'), h('span', { class: 'muted' }, 'y = collateral ÷ debt at pClaim; dashed 110 % / 105 %'));
+  lg.append(h('span', {}, h('i', { class: 'ring' }), 'claimable (yed_listclaimable)'), h('span', { class: 'muted' }, `y = collateral ÷ debt at pClaim ${usd(pClaim)} (claims use pClaim; the global ratio tile uses pMint ${usd(stats.pMint)}); dashed 110 % / 105 %`));
 }
 
 // ---------------------------------------------------------------- attestors
