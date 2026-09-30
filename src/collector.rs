@@ -308,6 +308,13 @@ impl Collector {
                 last.insert(name, v.clone());
                 self.model.write().await.devnet.insert(name.to_string(), v.clone());
                 let height = v.get("height").and_then(Value::as_u64);
+                // The value is flattened into the event envelope: its `height` would be written twice.
+                let mut v = v;
+                if let Some(o) = v.as_object_mut() {
+                    for k in ["seq", "ts", "height", "node", "kind"] {
+                        o.remove(k);
+                    }
+                }
                 let kind = if name == "heartbeat" { EventKind::DevnetHeartbeat(v) } else { EventKind::DevnetSim(v) };
                 self.bus.publish(height, None, kind);
             }

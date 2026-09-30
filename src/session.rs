@@ -11,6 +11,8 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use tracing::warn;
+
 use crate::events::{Event, EventKind, SCHEMA_VERSION};
 
 /// The `session` header event for this run.
@@ -46,13 +48,30 @@ impl Recorder {
 
 /// Parse a session file (blank lines skipped). Line 1 must be a `session` header of a version
 /// this build reads; a later header (a restart appended to the same file) is kept in place.
+/// Within a run the events are ordered by `seq` (files written before 0.1.0's bus took seq and
+/// the write under one lock can hold a line or two out of order). A line that is not an event
+/// (a torn last line after a crash, a duplicate key from an older writer) is skipped with a
+/// warning, never fatal: the file is a log. Each line is read as a JSON value first so a
+/// duplicate key (the last wins) does not fail the envelope's strict decoding.
 pub fn read_session(text: &str) -> Result<Vec<Event>, String> {
     let mut out = Vec::new();
+    let mut skipped = 0usize;
     for (i, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
-        let e: Event = serde_json::from_str(line).map_err(|e| format!("line {}: {}", i + 1, e))?;
+        let parsed = serde_json::from_str::<serde_json::Value>(line).map_err(|e| e.to_string()).and_then(|v| serde_json::from_value::<Event>(v).map_err(|e| e.to_string()));
+        let e = match parsed {
+            Ok(e) => e,
+            Err(err) if out.is_empty() => return Err(format!("line {}: {}", i + 1, err)),
+            Err(err) => {
+                skipped += 1;
+                if skipped <= 5 {
+                    warn!("session line {} skipped: {}", i + 1, err);
+                }
+                continue;
+            }
+        };
         match &e.kind {
             EventKind::Session { version, .. } if *version == SCHEMA_VERSION => {}
             EventKind::Session { version, .. } => return Err(format!("line {}: session version {} (want {})", i + 1, version, SCHEMA_VERSION)),
@@ -61,7 +80,22 @@ pub fn read_session(text: &str) -> Result<Vec<Event>, String> {
         }
         out.push(e);
     }
-    Ok(out)
+    if skipped > 0 {
+        warn!("session: {} line(s) skipped", skipped);
+    }
+    let mut run = 0u64;
+    let keyed: Vec<(u64, u64)> = out
+        .iter()
+        .map(|e| {
+            if matches!(e.kind, EventKind::Session { .. }) {
+                run += 1;
+            }
+            (run, e.seq)
+        })
+        .collect();
+    let mut order: Vec<usize> = (0..out.len()).collect();
+    order.sort_by_key(|&i| keyed[i]);
+    Ok(order.into_iter().map(|i| out[i].clone()).collect())
 }
 
 #[cfg(test)]
@@ -76,6 +110,13 @@ mod tests {
         let two_runs = format!("{}{}", ok, ok);
         assert_eq!(read_session(&two_runs).unwrap().len(), 4, "a restart appends a second header");
         assert!(read_session("{\"seq\":0,\"ts\":0,\"kind\":\"session\",\"version\":99}\n").is_err());
+        let swapped = "{\"seq\":1,\"ts\":0,\"kind\":\"session\",\"version\":1}\n{\"seq\":3,\"ts\":0,\"kind\":\"note\",\"text\":\"b\"}\n{\"seq\":2,\"ts\":0,\"kind\":\"note\",\"text\":\"a\"}\n";
+        let seqs: Vec<u64> = read_session(swapped).unwrap().iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, vec![1, 2, 3]);
+        let torn = "{\"seq\":1,\"ts\":0,\"kind\":\"session\",\"version\":1}\n{\"seq\":2,\"ts\":0,\"height\":5,\"kind\":\"devnet_sim\",\"height\":5}\n{\"seq\":3,\"ts\":0,\"kind\":\"no";
+        let got = read_session(torn).unwrap();
+        assert_eq!(got.len(), 2, "duplicate key tolerated, torn last line skipped");
+        assert_eq!(got[1].height, Some(5));
     }
 
     #[test]
