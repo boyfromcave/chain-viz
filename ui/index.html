@@ -4,44 +4,50 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>chain-viz</title>
-<style>
-  :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #667; --line: #ddd; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #99a; --line: #333; } }
-  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  h1 { font-size: 16px; margin: 0 0 8px; }
-  #head { color: var(--muted); margin-bottom: 12px; }
-  #log { white-space: pre-wrap; word-break: break-all; border-top: 1px solid var(--line); padding-top: 8px; }
-  .k { color: var(--muted); }
-</style>
+<link rel="stylesheet" href="/ui/style.css">
 </head>
 <body>
-<h1>chain-viz <span class="k">— live events (placeholder UI; C2 replaces this page)</span></h1>
-<div id="head">connecting…</div>
-<div id="log"></div>
-<script type="module">
-const head = document.getElementById('head'), log = document.getElementById('log');
-let seq = 0;
-function line(e) {
-  const rest = Object.assign({}, e); delete rest.seq; delete rest.ts; delete rest.kind; delete rest.node; delete rest.height;
-  const d = document.createElement('div');
-  d.textContent = `${String(e.seq).padStart(6)} ${new Date(e.ts * 1000).toLocaleTimeString()} ${e.kind.padEnd(18)} ` +
-    `${e.node !== undefined ? 'node' + e.node : '     '} ${e.height !== undefined ? '@' + e.height : ''} ${JSON.stringify(rest)}`;
-  log.prepend(d);
-  while (log.children.length > 500) log.lastChild.remove();
-  if (e.seq) seq = Math.max(seq, e.seq);
-}
-async function resync() {
-  const h = await (await fetch('/api/health')).json();
-  head.textContent = `${h.chain} · ${h.nodesUp}/${h.nodes} nodes up · tip ${h.tip ? h.tip.height + ' ' + h.tip.hash.slice(-12) : '?'} · ${h.agreeing ?? '?'} agree · seq ${h.seq}`;
-  const events = await (await fetch('/api/events?since=' + seq)).json();
-  for (const e of events) line(e);
-}
-function connect() {
-  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-  ws.onmessage = (m) => { const e = JSON.parse(m.data); if (e.kind === 'hello' || e.kind === 'lagged') { resync(); return; } line(e); if (e.kind === 'tip' || e.kind === 'note') resync(); };
-  ws.onclose = () => { head.textContent = 'disconnected — retrying'; setTimeout(connect, 1000); };
-}
-resync().then(connect);
-</script>
+<header id="header" class="header">
+  <div class="brand">
+    <span class="title">chain-viz</span>
+    <span id="chain-name" class="pill">…</span>
+    <span id="conn" class="pill conn" data-state="connecting">connecting</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><span class="label">nodes up</span><span id="node-count" class="value">–</span></div>
+    <div class="stat"><span class="label">tip</span><span id="tip" class="value">–</span></div>
+    <div class="stat hero"><span class="label">since last block <span id="spacing" class="muted"></span></span><span id="since" class="value" data-level="0">–</span></div>
+    <div class="stat"><span class="label">seq</span><span id="seq" class="value">–</span></div>
+  </div>
+</header>
+
+<main class="grid">
+  <section id="panel-chain" class="panel span-2">
+    <div class="panel-head"><h2>Chain</h2><span class="hint">newest right · main row on top, side branches hang below their fork point</span></div>
+    <div id="heads" class="chips" aria-label="per-node heads"></div>
+    <div id="dag-wrap" class="dag-wrap"><svg id="dag" class="dag" role="img" aria-label="block DAG"></svg></div>
+    <div class="row">
+      <div id="gauges" class="gauges"></div>
+      <div class="reorgs"><h3>Reorg log</h3><ol id="reorg-log" class="list"></ol></div>
+    </div>
+  </section>
+
+  <section id="panel-mempool" class="panel">
+    <div class="panel-head"><h2>Mempool</h2><span class="hint">fee rate × time in mempool</span></div>
+    <div id="mempool-stats" class="tiles"></div>
+    <svg id="mempool-plot" class="plot" role="img" aria-label="mempool scatter"></svg>
+    <div id="mempool-legend" class="legend"></div>
+    <details><summary>Table</summary><table id="mempool-table" class="table"></table></details>
+  </section>
+
+  <section id="panel-events" class="panel">
+    <div class="panel-head"><h2>Events</h2>
+      <label class="hint">kind <select id="event-filter"><option value="">all</option></select></label>
+    </div>
+    <ol id="event-log" class="list mono"></ol>
+  </section>
+</main>
+<div id="tooltip" class="tooltip" hidden></div>
+<script type="module" src="/ui/app.js"></script>
 </body>
 </html>
