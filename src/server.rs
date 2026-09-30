@@ -43,6 +43,22 @@ pub fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// Every path embedded from `ui/` (relative, `/`-separated), for the served-files test.
+pub fn ui_paths() -> Vec<String> {
+    fn walk(dir: &Dir<'static>, out: &mut Vec<String>) {
+        for f in dir.files() {
+            out.push(f.path().to_string_lossy().replace('\\', "/"));
+        }
+        for d in dir.dirs() {
+            walk(d, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&UI, &mut out);
+    out.sort();
+    out
+}
+
 async fn index() -> Response {
     serve_ui("index.html")
 }
