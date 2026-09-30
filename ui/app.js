@@ -11,7 +11,7 @@ import * as events from './panels/events.js';
 export const store = {
   snap: null,            // last /api/snapshot (chain, mempool, nodes, devnet, yedInfo)
   seq: 0,                // last applied event seq
-  conn: 'connecting',    // connecting | open | reconnecting | closed
+  conn: 'connecting',    // connecting | open | reconnecting | closed | static (an --export copy)
   events: [],            // tail of the event stream (newest last), ≤ MAX_EVENTS
   reorgs: [],            // reorg events, newest first
   rejected: new Set(),   // block hashes some node rejected
@@ -179,5 +179,15 @@ function loop(t) {
   requestAnimationFrame(loop);
 }
 
+// Static mode (`chain-viz --export`, ui/static.js): the data is a file, there is no /ws; one
+// resync applies the exported event log and the page stays as exported.
+async function startStatic() {
+  await resync();
+  store.conn = 'static'; store.dirty = true;
+}
+
 for (const p of panels) p.init?.(store);
-loadSnapshot().catch((e) => { store.conn = 'closed'; console.error(e); }).finally(() => { connect(); requestAnimationFrame(loop); });
+loadSnapshot().catch((e) => { store.conn = 'closed'; console.error(e); }).finally(() => {
+  if (window.CHAIN_VIZ_STATIC) startStatic().catch(console.error); else connect();
+  requestAnimationFrame(loop);
+});

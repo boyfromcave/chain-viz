@@ -150,7 +150,8 @@ pub struct RpcClient {
 
 impl std::fmt::Debug for RpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RpcClient").field("node", &self.node.id).field("url", &self.node.url).finish()
+        // Never the URL or credentials: a Debug print may end up in a log.
+        f.debug_struct("RpcClient").field("node", &self.node.id).finish()
     }
 }
 
@@ -169,6 +170,14 @@ impl RpcClient {
         &self.node
     }
 
+    /// reqwest's transport errors quote the request URL (`error sending request for url
+    /// (http://host:port/)`), and those strings reach `nodes[].error`, `note` events and the log:
+    /// the node's address is replaced by its id before the error leaves this client.
+    fn scrub(&self, msg: String) -> String {
+        let hostport = self.node.url.split_once("://").map(|(_, h)| h).unwrap_or(&self.node.url);
+        msg.replace(&self.node.url, &format!("node {}", self.node.id)).replace(hostport, &format!("node {}", self.node.id))
+    }
+
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         let _permit = self.limit.acquire().await.map_err(|e| RpcError::Transport(e.to_string()))?;
         self.counter.bump(method);
@@ -181,9 +190,9 @@ impl RpcClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| RpcError::Transport(e.to_string()))?;
+            .map_err(|e| RpcError::Transport(self.scrub(e.to_string())))?;
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| RpcError::Transport(e.to_string()))?;
+        let text = resp.text().await.map_err(|e| RpcError::Transport(self.scrub(e.to_string())))?;
         let v: Value = serde_json::from_str(&text).map_err(|e| RpcError::Protocol(format!("HTTP {}: {} ({})", status, e, text.chars().take(120).collect::<String>())))?;
         if let Some(err) = v.get("error").filter(|e| !e.is_null()) {
             return Err(RpcError::Node { code: err.get("code").and_then(Value::as_i64).unwrap_or(0), message: err.get("message").and_then(Value::as_str).unwrap_or("").to_string() });
