@@ -7,7 +7,8 @@
 #     (+ 4 MB of slack for allocator noise) — the model and the event window are bounded (--keep);
 #   * every per-interval rpcCalls delta is within [0.5, 2] x the median delta — no error storm,
 #     no stall;
-#   * at most 3 RPC-failure notes over the whole run.
+#   * RPC failures are rare: at most 2 sample intervals see any, and at most 3 per node in all (a
+#     host-wide hiccup makes one note per node at once; a storm makes them every interval).
 # Meant for a devnet with a fast heartbeat (`yellowback-devnet heartbeat rate 2`) and a small
 # `--keep` so eviction actually runs, e.g.
 #   chain-viz --devnet ~/yb-devnet --keep 50 --listen 127.0.0.1:8497 & qa/soak.sh http://127.0.0.1:8497 $! 20
@@ -16,6 +17,7 @@ url=${1:?url}; pid=${2:?pid}; minutes=${3:?minutes}; every=${4:-30}
 py=${PYTHON:-python3}
 samples=$(( minutes * 60 / every ))
 out=${SOAK_OUT:-/dev/stdout}
+nodes=$(curl -sf "$url/api/health" | "$py" -c 'import json,sys; print(json.load(sys.stdin)["nodes"])')
 echo "t,rss_kb,seq,rpc_calls,rpc_notes" > "$out"
 last_seq=0
 for i in $(seq 1 "$samples"); do
@@ -28,8 +30,9 @@ for i in $(seq 1 "$samples"); do
   last_seq=$seq
   echo "$(( i * every )),$rss,$seq,$calls,$notes" >> "$out"
 done
-"$py" - "$out" <<'EOF'
+"$py" - "$out" "$nodes" <<'EOF'
 import csv, statistics, sys
+nodes = int(sys.argv[2])
 rows = [dict(t=int(r["t"]), rss=int(r["rss_kb"]), seq=int(r["seq"]), calls=int(r["rpc_calls"]), notes=int(r["rpc_notes"])) for r in csv.DictReader(open(sys.argv[1]))]
 n = len(rows); ok = True
 def check(cond, msg):
@@ -43,8 +46,8 @@ deltas = [b["calls"] - a["calls"] for a, b in zip(rows, rows[1:])]
 med = statistics.median(deltas) if deltas else 0
 bad = [d for d in deltas if not (0.5 * med <= d <= 2 * med) or d <= 0]
 check(med > 0 and not bad, f"rpcCalls per interval: median {med}, min {min(deltas) if deltas else '-'}, max {max(deltas) if deltas else '-'}, outliers {bad}")
-notes = sum(r["notes"] for r in rows)
-check(notes <= 3, f"rpc-failure notes over the run: {notes}")
+notes = sum(r["notes"] for r in rows); bursts = sum(1 for r in rows if r["notes"])
+check(bursts <= 2 and notes <= 3 * nodes, f"rpc-failure notes over the run: {notes} across {bursts} interval(s), {nodes} nodes")
 print(f"{n} samples, seq {rows[0]['seq']} -> {rows[-1]['seq']}, rpcCalls {rows[0]['calls']} -> {rows[-1]['calls']}")
 sys.exit(0 if ok else 1)
 EOF
