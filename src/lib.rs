@@ -3,6 +3,7 @@
 //! (`docs/plans/chain-viz-plan.md` in the workspace) and `README.md`.
 
 pub mod bus;
+pub mod classify;
 pub mod collector;
 pub mod events;
 pub mod model;
