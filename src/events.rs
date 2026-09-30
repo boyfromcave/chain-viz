@@ -4,11 +4,8 @@
 //!
 //! Wire form of one event (one line of `session.jsonl`, one element of `/api/events`, one WS
 //! frame): `{"seq":12,"ts":1727600000.123,"height":331,"node":"2","kind":"block", ...fields}`.
-//! `height` and `node` are omitted when absent. Line 1 of a session file is
-//! `{"seq":0,"ts":…,"kind":"session","version":1,"nodes":[…],"chain":"regtest"}`.
-
-use std::io::Write;
-use std::path::{Path, PathBuf};
+//! `height` and `node` are omitted when absent. Line 1 of a session file is a `session` header
+//! (`session.rs`).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -54,6 +51,9 @@ pub enum EventKind {
     /// Line 1 of a session file.
     Session {
         version: u32,
+        /// The chain-viz that wrote the file (`CARGO_PKG_VERSION`).
+        #[serde(rename = "chainViz", default)]
+        chain_viz: String,
         #[serde(default)]
         nodes: Vec<String>,
         #[serde(default)]
@@ -181,50 +181,7 @@ pub fn now() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
 }
 
-/// `--record <dir>`: appends one JSON line per event to `<dir>/session.jsonl`.
-pub struct Recorder {
-    path: PathBuf,
-    file: std::fs::File,
-}
-
-impl Recorder {
-    pub fn open(dir: &Path) -> std::io::Result<Recorder> {
-        std::fs::create_dir_all(dir)?;
-        let path = dir.join("session.jsonl");
-        let file = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
-        Ok(Recorder { path, file })
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    pub fn write(&mut self, event: &Event) -> std::io::Result<()> {
-        let mut line = serde_json::to_vec(event)?;
-        line.push(b'\n');
-        self.file.write_all(&line)
-    }
-}
-
-/// Parse a session file's lines (blank lines skipped); the first must be `session`.
-pub fn read_session(text: &str) -> Result<Vec<Event>, String> {
-    let mut out = Vec::new();
-    for (i, line) in text.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let e: Event = serde_json::from_str(line).map_err(|e| format!("line {}: {}", i + 1, e))?;
-        if out.is_empty() {
-            match &e.kind {
-                EventKind::Session { version, .. } if *version == SCHEMA_VERSION => {}
-                EventKind::Session { version, .. } => return Err(format!("session version {} (want {})", version, SCHEMA_VERSION)),
-                _ => return Err("line 1 is not a session header".into()),
-            }
-        }
-        out.push(e);
-    }
-    Ok(out)
-}
+pub use crate::session::{read_session, Recorder};
 
 #[cfg(test)]
 mod tests {
@@ -244,12 +201,5 @@ mod tests {
         let s = serde_json::to_string(&e).unwrap();
         assert!(!s.contains("height"), "{}", s);
         assert!(!s.contains("node"), "{}", s);
-    }
-
-    #[test]
-    fn session_header_required() {
-        assert!(read_session("{\"seq\":1,\"ts\":0,\"kind\":\"note\",\"text\":\"x\"}\n").is_err());
-        let ok = "{\"seq\":0,\"ts\":0,\"kind\":\"session\",\"version\":1}\n{\"seq\":1,\"ts\":0,\"kind\":\"note\",\"text\":\"x\"}\n";
-        assert_eq!(read_session(ok).unwrap().len(), 2);
     }
 }

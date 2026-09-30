@@ -34,8 +34,13 @@ impl Bus {
     }
 
     pub fn publish(&self, height: Option<u64>, node: Option<String>, kind: EventKind) -> Event {
+        self.publish_at(now(), height, node, kind)
+    }
+
+    /// `publish` with an explicit timestamp (replay keeps the recorded one).
+    pub fn publish_at(&self, ts: f64, height: Option<u64>, node: Option<String>, kind: EventKind) -> Event {
         let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let event = Event { seq, ts: now(), height, node, kind };
+        let event = Event { seq, ts, height, node, kind };
         {
             let mut log = self.log.lock().unwrap_or_else(|e| e.into_inner());
             log.push_back(event.clone());
