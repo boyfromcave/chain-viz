@@ -34,15 +34,104 @@ chain-viz --nodes http://127.0.0.1:8832,http://10.0.0.2:8832 --rpcuser u --rpcpa
 ```
 
 Then open the printed `http://127.0.0.1:8480`. Polling defaults to 1 s on regtest, 5 s otherwise
-(`--poll`); a node with `-zmqpubhashblock`/`-zmqpubhashtx` can be wired with
-`--zmq <id>=tcp://host:port` (Ycash has no `getzmqnotifications`, so it cannot be discovered).
-`--record <dir>` appends every event to `<dir>/session.jsonl` (see Sessions).
+(`--poll`, read from `getblockchaininfo.chain` of the first node that answers); a node with
+`-zmqpubhashblock`/`-zmqpubhashtx` can be wired with `--zmq <id>=tcp://host:port` (Ycash has no
+`getzmqnotifications`, so it cannot be discovered). `--record <dir>` appends every event to
+`<dir>/session.jsonl` (see Sessions).
+
+Credentials for `--nodes` URLs without userinfo come from, in order: `--cookie <path>` (a
+Bitcoin-style cookie file, `user:password` on one line), `--datadir <dir>` (its `.cookie`,
+also `regtest/.cookie` and `testnet3/.cookie`), else `--rpcuser`/`--rpcpassword`. A cookie is
+what `ycashd` writes when it runs without `-rpcuser`, so a mainnet node needs no password in
+any config or command line:
+
+```
+chain-viz --nodes http://127.0.0.1:8832 --datadir ~/.ycash
+```
 
 API: `GET /api/health`, `GET /api/snapshot`, `GET /api/events?since=<seq>`, `WS /ws`
 (first frame `{"kind":"hello","seq":N}`). Event schema v1 is `src/events.rs`.
 
-`--yolo`, `--lightwalletd`, `--public` and `--export` parse but are not implemented yet
-(chunks C4, C7).
+`--yolo` and `--lightwalletd` parse but are not implemented yet (chunk C4).
+
+### The node
+
+chain-viz needs, on each node it watches:
+
+* `-yellowback -experimentalfeatures` for the Yellowback overlay (`yed_getinfo` and the rest);
+  a stock node without them is watched as chain + mempool only (`nodes[].yellowback = false`);
+* **no `-prune`**: blocks are fetched by hash with `getblock`, and a reorg walks back to the
+  fork point;
+* **`-txindex` is not required.** chain-viz calls `getrawtransaction` only for transactions
+  that are in a node's mempool; anything confirmed is read through `getblock <hash> 2`, which
+  carries the full transactions without an index (`src/rpc.rs` has one `get_raw_transaction`
+  and the collector uses it for nothing confirmed).
+
+Load per node (plan §7): one `getbestblockhash`, one `getrawmempool true` and one `yed_getinfo`
+per poll; `getblock` once per new hash; `getchaintips` on a head move and every tenth poll.
+`/api/health.rpcCalls` counts every method per node so a monitor can watch the rate.
+
+### Memory: `--keep`
+
+The chain model keeps the newest `--keep` blocks (default 5000) below the highest head and
+evicts the rest — their `BlockInfo`, their txids in the `mined` set, and every event at a
+lower height from the `/api/events` window — on each head move; rollups a later chunk adds
+(revenue) are kept. A mainnet run is therefore bounded by `--keep`, not by uptime.
+`qa/soak.sh <url> <pid> <minutes>` samples RSS (`ps -o rss`), `seq` and the `rpcCalls` sum of a
+running instance and fails on a rising RSS, an uneven RPC rate or RPC-failure notes — run it
+against a devnet with `heartbeat rate 2` and a small `--keep` (see the script header).
+
+## Hosting
+
+chain-viz binds **127.0.0.1:8480** unless told otherwise. Two ways to let others in:
+
+**A reverse proxy** in front of the loopback instance, terminating TLS and forwarding `/ws`
+as a WebSocket. nginx:
+
+```
+location / {
+    proxy_pass         http://127.0.0.1:8480;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade $http_upgrade;
+    proxy_set_header   Connection "upgrade";
+    proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+Caddy: `reverse_proxy 127.0.0.1:8480` (WebSockets and `X-Forwarded-For` come by default).
+
+**`--public`** for an instance that faces the network (with or without a proxy;
+`--listen 0.0.0.0:8480` warns when `--public` is off). It
+
+* rate-limits every request per client IP (10 req/s, burst 40, then `429` with `Retry-After`;
+  the first `X-Forwarded-For` entry is the client when a proxy sets it, else the peer);
+* caps open WebSocket connections at 64 (`503` past that) and `/api/events` at 2000 events per
+  call (oldest first, contiguous from `since`; ask again from the last `seq` when you got
+  exactly 2000);
+* redacts every string in every response and WebSocket frame that looks like a URL, a
+  `user@host`, a `host:port` or a filesystem path — so no node address, credential,
+  `--replay` file name or devnet path leaves the server. Node **ids** stay (`"0"`…`"7"`, or
+  the `--nodes` index): they are how the UI names nodes.
+
+Whether or not `--public` is on, RPC credentials are never logged and an RPC error never
+carries the node's address (the client replaces it by `node <id>` before the error becomes a
+`note` event or a log line). `tests/hardening.rs` runs the binary with a password and a
+hostname that must not appear in `/api/health`, `/api/snapshot`, `/api/events`, the log or
+an export, and checks the `429`.
+
+**A static copy** for a host with no server at all:
+
+```
+chain-viz --devnet ~/yb-devnet --export ~/www/chain-viz
+```
+
+writes, every 30 s and once more at shutdown, `index.html`, `ui/` and `snapshot.json`,
+`events.json`, `health.json` (redacted as under `--public`) plus `ui/data.js` holding the
+same three as one global. The page opens from any static host (`python3 -m http.server` in
+the directory, S3, GitHub Pages) and shows the exported state with connection state
+`static`; `qa/ui-smoke.mjs <dir>` checks an export without a browser. Opening `index.html`
+straight from `file://` works where the browser allows module scripts there (Firefox does;
+Chrome does not, and serves nothing — use the one-line http server).
 
 ## Sessions: record and replay
 

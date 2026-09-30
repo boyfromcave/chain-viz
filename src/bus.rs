@@ -63,6 +63,16 @@ impl Bus {
         }
     }
 
+    /// Drop the head of the log up to the first event at `height >= floor` (`--keep`: the event
+    /// window follows the chain model's window, so a long run's memory is bounded by height, not
+    /// only by `max`). Heightless events older than that point go with it. Returns how many went.
+    pub fn evict_below(&self, floor: u64) -> usize {
+        let mut log = self.log.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(i) = log.iter().position(|e| e.height.is_some_and(|h| h >= floor)) else { return 0 };
+        log.drain(..i);
+        i
+    }
+
     /// Events with `seq > since`, oldest first (only what is still in the window).
     pub fn since(&self, since: u64) -> Vec<Event> {
         self.log.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|e| e.seq > since).cloned().collect()
