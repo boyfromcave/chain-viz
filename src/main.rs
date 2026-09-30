@@ -163,8 +163,9 @@ async fn main() {
         chain_hint = Some("regtest".into());
         info!("devnet {}: {} nodes, portseed {}", dir.display(), nodes.len(), v.get("portseed").map(|p| p.to_string()).unwrap_or_default());
     }
+    let first_id = nodes.len();
     for (i, url) in cli.nodes.iter().enumerate() {
-        let id = (nodes.len() + i).to_string();
+        let id = (first_id + i).to_string();
         nodes.push(node_from_url(&id, url, &rpcuser, &rpcpassword).unwrap_or_else(|e| fail(&e)));
     }
     if nodes.is_empty() {
