@@ -583,6 +583,16 @@ pub fn counts_by_node(clients: &[RpcClient]) -> HashMap<String, BTreeMap<String,
 mod tests {
     use super::*;
 
+    /// A fresh regtest node reports `globalRatioBps` and the prices as explicit `null` before the
+    /// first vault; `#[serde(default)]` alone rejects an explicit null (C-F25).
+    #[test]
+    fn yed_stats_tolerates_explicit_nulls() {
+        let v = json!({"height": 1, "globalRatioBps": null, "pFast": null, "pMid": null, "pSlow": null, "pMint": null, "pClaim": null});
+        let s: YedStats = serde_json::from_value(v).expect("nulls decode as defaults");
+        assert_eq!(s.global_ratio_bps, 0);
+        assert_eq!(s.p_fast, 0);
+    }
+
     #[test]
     fn devnet_json_nodes() {
         let d = json!({"pools": [2,3,4], "attestors": [5,6,7], "rpc": {
