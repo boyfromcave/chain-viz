@@ -62,9 +62,13 @@ there, then reconsider it (`D` is the devnet command):
 ```
 H=$(D cli --node 4 -- getblockhash $(( $(D cli --node 4 -- getblockcount) - 2 )))
 D cli --node 4 -- invalidateblock $H      # node 4's chip falls off the majority; side branch appears
-D mine 3 4                                # node 4 extends its own branch: the others reorg onto it
-D cli --node 4 -- reconsiderblock $H
+D cli --node 4 -- generate 3              # node 4 extends its own branch (not `mine`: that helper waits for all nodes to agree)
+D cli --node 4 -- reconsiderblock $H      # node 4 rejoins the majority; its blocks become orphans
 ```
+
+With the heartbeat running the majority stays ahead, so it is node 4 that reorgs back. To make the
+*others* reorg instead, `D heartbeat stop`, `generate 5` on node 4, then `D heartbeat start`: one
+`reorg` row per node appears as they move onto node 4's longer branch.
 
 Never invalidate more than 99 blocks deep: a stock Ycash wallet node aborts on a reorg longer
 than its witness cache (`WITNESS_CACHE_SIZE` = 100; plan finding C-F33), and on macOS the process
