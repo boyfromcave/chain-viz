@@ -56,6 +56,20 @@ chain-viz --devnet ~/yb-devnet                 # or by hand: reads devnet.json f
 beside `devnet.json`: the heartbeat rate sets the target block spacing, the fed prices are
 drawn dotted on the price chart, and the personas' counts arrive as `devnet_sim` events.
 
+To watch a fork and a reorg heal, invalidate a block **near the tip** on one node, mine past it
+there, then reconsider it (`D` is the devnet command):
+
+```
+H=$(D cli --node 4 -- getblockhash $(( $(D cli --node 4 -- getblockcount) - 2 )))
+D cli --node 4 -- invalidateblock $H      # node 4's chip falls off the majority; side branch appears
+D mine 3 4                                # node 4 extends its own branch: the others reorg onto it
+D cli --node 4 -- reconsiderblock $H
+```
+
+Never invalidate more than 99 blocks deep: a stock Ycash wallet node aborts on a reorg longer
+than its witness cache (`WITNESS_CACHE_SIZE` = 100; plan finding C-F33), and on macOS the process
+then hangs beyond `kill -9` until `down`/reboot.
+
 ## Run against your own node
 
 ```
