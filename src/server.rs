@@ -38,6 +38,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/ui/{*path}", get(ui_file))
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/yellowback", get(yellowback))
         .route("/api/events", get(events))
         .route("/ws", get(ws))
         .with_state(state)
@@ -91,6 +92,21 @@ async fn health(State(s): State<Arc<AppState>>) -> Json<Value> {
 async fn snapshot(State(s): State<Arc<AppState>>) -> Json<Value> {
     let m = s.model.read().await;
     Json(serde_json::to_value(m.snapshot(s.bus.last_seq(), SNAPSHOT_BLOCKS)).unwrap_or(Value::Null))
+}
+
+/// The health panel's slice: the `yellowback` section plus, per main-chain block, its `yb`
+/// view (tag, miner, txs) — much smaller than the whole snapshot, fetched once per block.
+async fn yellowback(State(s): State<Arc<AppState>>) -> Json<Value> {
+    let m = s.model.read().await;
+    let chain = m.chain.snapshot(SNAPSHOT_BLOCKS);
+    let blocks: Vec<Value> = chain.main.iter().map(|b| json!({"hash": b.hash, "height": b.height, "time": b.time, "txCount": b.tx_count, "yb": b.yb})).collect();
+    Json(json!({
+        "seq": s.bus.last_seq(),
+        "tip": chain.majority.as_ref().map(|h| json!({"height": h.height, "hash": h.hash})),
+        "yedInfo": m.yed_info,
+        "yellowback": m.yellowback.snapshot(m.leader(), &m.healthy()),
+        "blocks": blocks,
+    }))
 }
 
 #[derive(Deserialize)]

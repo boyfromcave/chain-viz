@@ -1,0 +1,62 @@
+/* Yellowback health panel (C3). Uses the page's tokens (style.css): --s1..--s8 categorical, status
+   colours, --grid/--axis/--ink/--muted, --surface. Nothing here redefines a colour. */
+#panel-health .yb-ribbon { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 4px 0 8px; }
+#panel-health .yb-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px 1px 6px; font-size: 12px; color: var(--ink-2); }
+#panel-health .yb-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--mark); }
+#panel-health .yb-pill[data-on="1"][data-level="good"] i { background: var(--good); }
+#panel-health .yb-pill[data-on="1"][data-level="warning"] i { background: var(--warning); }
+#panel-health .yb-pill[data-on="1"][data-level="critical"] i { background: var(--critical); }
+#panel-health .yb-pill[data-on="1"] { color: var(--ink); font-weight: 600; }
+#panel-health .yb-pill[data-on="1"][data-level="critical"] { border-color: var(--critical); }
+#panel-health .yb-sep { width: 1px; height: 18px; background: var(--grid); }
+#panel-health .yb-state { font-size: 12px; }
+#panel-health .yb-state b { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
+#panel-health .yb-alarm { border: 2px solid var(--critical); background: color-mix(in oklab, var(--critical) 14%, var(--surface)); border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; }
+#panel-health .yb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+#panel-health .yb-wide { grid-column: 1 / -1; }
+#panel-health .yb-card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+#panel-health .yb-card h3 { margin-bottom: 2px; }
+#panel-health .plot { display: block; width: 100%; height: 200px; margin-top: 6px; }
+#panel-health #yb-lanes { height: auto; }
+#panel-health #yb-ratio, #panel-health #yb-vaults { height: 180px; }
+#panel-health .tick { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+#panel-health .gridline { stroke: var(--grid); stroke-width: 1; }
+#panel-health .axis { stroke: var(--axis); stroke-width: 1; }
+#panel-health .empty { fill: var(--muted); font-size: 12px; }
+#panel-health .yb-label { font-size: 10px; font-weight: 600; }
+#panel-health .yb-marker { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 2 2; }
+#panel-health .yb-rejected { stroke: var(--critical); stroke-width: 2; }
+#panel-health .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+#panel-health .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+#panel-health .legend i.dotted { background: none; border-top: 2px dotted var(--ink-2); height: 0; vertical-align: 3px; }
+#panel-health .legend i.ring { background: none; border: 2px solid var(--critical); border-radius: 50%; }
+#panel-health .tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+#panel-health .tile { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; min-width: 88px; }
+#panel-health .tile .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+#panel-health .tile .value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#panel-health .tile .sub { font-size: 11px; color: var(--ink-2); }
+#panel-health .tile[data-flag="1"] { border-color: var(--serious); }
+#panel-health .tile[data-flag="1"] .value { color: var(--serious); }
+#panel-health .yb-fill { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 16px; margin-top: 6px; font-size: 12px; }
+#panel-health .yb-fillrow .label { color: var(--ink-2); }
+#panel-health .yb-fillrow .bar { position: relative; height: 6px; background: var(--grid); border-radius: 3px; margin-top: 3px; }
+#panel-health .yb-fillrow .bar i { display: block; height: 100%; background: var(--s1); border-radius: 3px; }
+#panel-health .yb-fillrow[data-ok="0"] .bar i { background: var(--critical); }
+#panel-health .yb-fillrow .bar b { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--ink-2); }
+#panel-health .yb-fill .hint { grid-column: 1 / -1; }
+#panel-health .table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+#panel-health .table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; border-bottom: 1px solid var(--grid); }
+#panel-health .table td { padding: 2px 6px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#panel-health tr[data-bad="1"] td { background: color-mix(in oklab, var(--critical) 10%, var(--surface)); }
+#panel-health .yb-type { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; border-left: 4px solid var(--c); background: color-mix(in oklab, var(--c) 14%, var(--surface)); }
+#panel-health .yb-status { font-size: 11px; font-weight: 600; }
+#panel-health .yb-status[data-s="ELIGIBLE"], #panel-health .yb-status[data-s="OK"] { color: var(--good); }
+#panel-health .yb-status[data-s="EJECTED"], #panel-health .yb-status[data-s="BAD"] { color: var(--critical); }
+#panel-health .yb-status[data-s="DORMANT"], #panel-health .yb-status[data-s="PENDING"], #panel-health .yb-status[data-s="WITHDRAWN"] { color: var(--warning); }
+#panel-health .yb-bad { color: var(--critical); }
+#panel-health .yb-agree { font-weight: 600; margin-bottom: 4px; }
+#panel-health .yb-agree[data-agree="yes"] { color: var(--good); }
+#panel-health .yb-agree[data-agree="no"] { color: var(--critical); }
+#panel-health .yb-agree[data-agree="na"] { color: var(--muted); }
+#panel-health .yb-verdict { font-size: 12px; color: var(--serious); }
+@media (max-width: 800px) { #panel-health .yb-grid { grid-template-columns: 1fr; } }
