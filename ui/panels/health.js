@@ -217,7 +217,8 @@ function renderSupply(y, stats) {
   const hi = Math.max(12000, ...pts.map((r) => r.globalRatioBps)) * 1.05, lo = 0;
   const yy = (v) => H - PM.b - ((v - lo) / (hi - lo)) * (H - PM.t - PM.b);
   for (const v of ticks(lo, hi, 4)) { el.append(svg('line', { class: 'gridline', x1: PM.l, x2: W - PM.r, y1: yy(v), y2: yy(v) })); el.append(svg('text', { class: 'tick', x: PM.l - 4, y: yy(v) + 3, 'text-anchor': 'end' }, pct(v))); }
-  for (const [v, c, l] of [[11000, 'var(--serious)', '110 % claim'], [10500, 'var(--critical)', '105 % emergency']]) { el.append(svg('line', { x1: PM.l, x2: W - PM.r, y1: yy(v), y2: yy(v), stroke: c, 'stroke-width': 1, 'stroke-dasharray': '4 3' })); el.append(svg('text', { class: 'yb-label', x: PM.l + 2, y: yy(v) - 2, fill: c }, l)); }
+  // the two reference lines sit 5 % apart: label one above, one below, so they never collide
+  for (const [v, c, l, dy] of [[11000, 'var(--serious)', '110 % claim', -3], [10500, 'var(--critical)', '105 % emergency', 11]]) { el.append(svg('line', { x1: PM.l, x2: W - PM.r, y1: yy(v), y2: yy(v), stroke: c, 'stroke-width': 1, 'stroke-dasharray': '4 3' })); el.append(svg('text', { class: 'yb-label', x: PM.l + 2, y: yy(v) + dy, fill: c }, l)); }
   // net supply change bars (baseline mid-height, tiny)
   const deltas = rows.map((r, i) => (i ? r.supplyCents - rows[i - 1].supplyCents : 0)); const maxD = Math.max(1, ...deltas.map(Math.abs));
   const dx = Math.max(1, (W - PM.l - PM.r) / rows.length);
