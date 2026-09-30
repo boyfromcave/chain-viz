@@ -34,6 +34,8 @@ fn per_node_per_poll_budget() {
         assert!(g("yed_getinfo") <= polls + 1, "node {}: yed_getinfo {} > polls {} + 1", node, g("yed_getinfo"), polls);
         // getblock once per new hash: no node fetches more blocks than the model knows
         assert!(g("getblock") <= blocks + 1, "node {}: getblock {} > blocks {}", node, g("getblock"), blocks);
+        // C4: getblocksubsidy at most once per block the node fetched (cached per height)
+        assert!(g("getblocksubsidy") <= g("getblock"), "node {}: getblocksubsidy {} > getblock {}", node, g("getblocksubsidy"), g("getblock"));
         // the per-block yed_* reads happen only on head moves, which are at most the blocks fetched
         assert!(g("yed_getstats") <= g("getblock"), "node {}: yed_getstats {} > getblock {}", node, g("yed_getstats"), g("getblock"));
         assert!(g("yed_getstatehash") <= g("getblock"), "node {}", node);

@@ -8,6 +8,7 @@ import * as chain from './panels/chain.js';
 import * as mempool from './panels/mempool.js';
 import * as events from './panels/events.js';
 import * as health from './panels/health.js';
+import * as revenue from './panels/revenue.js';
 
 export const store = {
   snap: null,            // last /api/snapshot (chain, mempool, nodes, devnet, yedInfo)
@@ -21,7 +22,7 @@ export const store = {
   dirty: true,
 };
 const MAX_EVENTS = 500;
-const panels = [header, chain, mempool, events, health];
+const panels = [header, chain, mempool, events, health, revenue];
 
 // ---------------------------------------------------------------- incremental apply
 function findBlock(hash) {

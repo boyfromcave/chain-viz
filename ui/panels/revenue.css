@@ -1,0 +1,35 @@
+/* Revenue panel (C4). Page tokens only (style.css): --s1..--s8 categorical, status colours,
+   --grid/--axis/--ink/--muted, --surface. Nothing here redefines a colour. */
+#panel-revenue .rv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+#panel-revenue .rv-wide { grid-column: 1 / -1; }
+#panel-revenue .rv-card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+#panel-revenue .rv-card h3 { margin-bottom: 2px; }
+#panel-revenue .plot { display: block; width: 100%; height: 220px; margin-top: 6px; }
+#panel-revenue .tick { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+#panel-revenue .gridline { stroke: var(--grid); stroke-width: 1; }
+#panel-revenue .axis { stroke: var(--axis); stroke-width: 1; }
+#panel-revenue .empty { fill: var(--muted); font-size: 12px; }
+#panel-revenue .rv-bar:hover rect { fill-opacity: .8; }
+#panel-revenue .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+#panel-revenue .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+#panel-revenue .tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+#panel-revenue .tile { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; min-width: 120px; }
+#panel-revenue .tile .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+#panel-revenue .tile .value { font-size: 18px; font-weight: 600; }
+#panel-revenue .tile .sub { font-size: 11px; color: var(--ink-2); }
+#panel-revenue .tile[data-flag="1"] { border-color: var(--critical); }
+#panel-revenue .tile[data-flag="1"] .value { color: var(--critical); }
+#panel-revenue .table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+#panel-revenue .table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; border-bottom: 1px solid var(--grid); font-family: inherit; }
+#panel-revenue .table td { padding: 2px 6px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; white-space: nowrap; font-family: inherit; }
+#panel-revenue tr[data-bad="1"] td { background: color-mix(in oklab, var(--critical) 10%, var(--surface)); }
+#panel-revenue .rv-barcell { position: relative; display: inline-block; min-width: 110px; padding-left: 4px; }
+#panel-revenue .rv-barcell i { position: absolute; left: 0; top: 2px; bottom: 2px; opacity: .22; border-radius: 3px; z-index: 0; }
+#panel-revenue .rv-status { font-size: 11px; font-weight: 600; }
+#panel-revenue .rv-status[data-s="OK"] { color: var(--good); }
+#panel-revenue .rv-status[data-s="NO"] { color: var(--warning); }
+#panel-revenue .rv-hero { font-size: 32px; font-weight: 600; line-height: 1.1; margin-top: 4px; }
+#panel-revenue .sub { font-size: 12px; color: var(--ink-2); }
+#panel-revenue p { margin: 6px 0; font-size: 13px; }
+#panel-revenue .rv-verdict { font-size: 12px; color: var(--serious); margin: 4px 0; }
+@media (max-width: 800px) { #panel-revenue .rv-grid { grid-template-columns: 1fr; } }

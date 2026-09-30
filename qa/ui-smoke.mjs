@@ -78,6 +78,19 @@ dots === s.mempool.count ? ok(`mempool plot: ${dots} dots for ${s.mempool.count}
 console.log('     ', ids.get('mempool-stats').children.map((t) => t.children[0].textContent + ' ' + t.children[1].textContent).join(' | '));
 ok(`event log: ${ids.get('event-log').children.length} rows, ${ids.get('event-filter').children.length} kinds in the filter`);
 console.log('     header:', ['chain-name', 'node-count', 'tip', 'since', 'spacing', 'conn'].map((i) => `${i}=${ids.get(i).textContent}`).join(' '), 'since-level', ids.get('since').dataset.level);
+// revenue panel (C4): its tables follow /api/revenue's groups
+{
+  const rv = await (await fetch(base + '/api/revenue?by=payoutKey')).json();
+  const el = (id) => document.getElementById(id);   // the panel registers its own ids (it builds its section itself)
+  const pools = el('rv-pools').children.length;
+  pools === rv.groups.length + 1 ? ok(`revenue: ${rv.groups.length} pool rows (+ header) for ${rv.groups.length} payoutKeys; enforcement fees ${rv.totals.enforcefee.zat} zat = ${rv.totals.enforcefee.usd?.toFixed(2)} USD ${rv.priceLabel}`) : fail(`revenue pool rows ${pools} != groups ${rv.groups.length} + 1`);
+  const bars = el('rv-blocks').querySelectorAll('.rv-bar').length;
+  const blk = await (await fetch(base + '/api/revenue?by=block')).json();
+  const want = Math.min(50, blk.groups.length);
+  bars === want ? ok(`revenue: ${bars} per-block bar groups (range: last 50 of ${blk.groups.length})`) : fail(`revenue bars ${bars} != ${want}`);
+  console.log('     ', el('rv-tiles').children.map((t) => t.children[0].textContent + ' ' + t.children[1].textContent).join(' | '));
+  console.log('     ', el('rv-cf').textContent.slice(0, 160));
+}
 // reconnect path: closing the socket must schedule a reconnect with backoff
 ws.onclose(); await new Promise((r) => setTimeout(r, 600));
 wsInstances.length >= 2 ? ok(`reconnect: ${wsInstances.length} sockets opened after a close`) : fail('no reconnect after close');

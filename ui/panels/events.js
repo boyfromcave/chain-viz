@@ -21,6 +21,7 @@ function summary(e) {
     case 'yb_tx': return `${e.type} ${e.verdict} ${e.txid.slice(0, 10)}…`;
     case 'yb_state': return `${e.field}: ${JSON.stringify(e.from)} → ${JSON.stringify(e.to)}`;
     case 'note': return e.text;
+    case 'revenue': return `${e.entry} ${(e.zat / 1e8).toFixed(4)} YEC → ${(e.payee || '').slice(0, 10)}…${e.usd !== undefined ? ' $' + Number(e.usd).toFixed(2) : ''}`;
     default: { const s = JSON.stringify(rest); return s.length > 120 ? s.slice(0, 117) + '…' : s; }
   }
 }
