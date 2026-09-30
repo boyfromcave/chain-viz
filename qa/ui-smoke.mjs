@@ -3,12 +3,19 @@
 // chain-viz (default http://127.0.0.1:8480), lets it fetch /api/snapshot and /api/events, renders
 // every panel once, and asserts the rendered element counts against the snapshot. No browser.
 //   node qa/ui-smoke.mjs [http://127.0.0.1:8491]
-import { readFileSync } from 'node:fs';
+// Given a directory instead of a URL, it is a `chain-viz --export` and the check runs in static
+// mode: ui/data.js + ui/static.js are evaluated first, no server is contacted, no WebSocket may
+// open, and the app must end in connection state `static`.
+//   node qa/ui-smoke.mjs /path/to/export
+import { readFileSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import vm from 'node:vm';
 
-const base = process.argv[2] || 'http://127.0.0.1:8480';
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'ui');
+const arg = process.argv[2] || 'http://127.0.0.1:8480';
+const isStatic = !/^https?:/.test(arg) && statSync(arg, { throwIfNoEntry: false })?.isDirectory();
+const base = isStatic ? 'http://static.invalid' : arg;
+const root = isStatic ? path.join(path.resolve(arg), 'ui') : path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'ui');
 
 // ---- fake DOM: just enough for h()/svg()/clear()/getElementById/tooltip ----
 class El {
@@ -30,7 +37,7 @@ class El {
 }
 class Text { constructor(t) { this.textContent = t; } remove() { const p = this.parentNode; if (p) p.children.splice(p.children.indexOf(this), 1); } }
 
-const html = readFileSync(path.join(root, 'index.html'), 'utf8');
+const html = readFileSync(isStatic ? path.join(root, '..', 'index.html') : path.join(root, 'index.html'), 'utf8');
 const ids = new Map();
 for (const m of html.matchAll(/id="([^"]+)"/g)) ids.set(m[1], new El('div'));
 globalThis.document = {
@@ -45,16 +52,21 @@ globalThis.WebSocket = class { constructor(url) { this.url = url; wsInstances.pu
 const wsInstances = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = (u) => realFetch(u.startsWith('http') ? u : base + u);
+if (isStatic) {   // what the browser does: the two classic scripts run before the module, on `window`
+  globalThis.window = globalThis; globalThis.Response ??= class { constructor(b) { this.b = b; this.ok = true; this.status = 200; } json() { return Promise.resolve(JSON.parse(this.b)); } };
+  for (const f of ['data.js', 'static.js']) vm.runInThisContext(readFileSync(path.join(root, f), 'utf8'), { filename: f });
+  if (!globalThis.CHAIN_VIZ_STATIC) throw new Error('ui/data.js did not set window.CHAIN_VIZ_STATIC');
+}
 
 // ---- load the app (module side effects: loadSnapshot → connect → loop) ----
 const app = await import(pathToFileURL(path.join(root, 'app.js')).href);
 // wait for the initial snapshot to land
 for (let i = 0; i < 50 && !app.store.snap; i++) await new Promise((r) => setTimeout(r, 100));
 if (!app.store.snap) throw new Error(`no snapshot from ${base}`);
-// simulate the ws hello → resync, then run the render loop once
-const ws = wsInstances[0]; if (!ws) throw new Error('app did not open a WebSocket');
-ws.onopen();
-ws.onmessage({ data: JSON.stringify({ kind: 'hello', seq: app.store.seq }) });
+// simulate the ws hello → resync (static mode: the app resyncs from the file by itself), then run the render loop once
+const ws = wsInstances[0];
+if (isStatic) { if (ws) throw new Error('static mode opened a WebSocket'); }
+else { if (!ws) throw new Error('app did not open a WebSocket'); ws.onopen(); ws.onmessage({ data: JSON.stringify({ kind: 'hello', seq: app.store.seq }) }); }
 await new Promise((r) => setTimeout(r, 800));
 for (let i = 0; i < 3 && rafQueue.length; i++) rafQueue.shift()(performance.now());   // loop() re-queues itself
 
@@ -92,7 +104,13 @@ console.log('     header:', ['chain-name', 'node-count', 'tip', 'since', 'spacin
   console.log('     ', el('rv-cf').textContent.slice(0, 160));
 }
 // reconnect path: closing the socket must schedule a reconnect with backoff
-ws.onclose(); await new Promise((r) => setTimeout(r, 600));
-wsInstances.length >= 2 ? ok(`reconnect: ${wsInstances.length} sockets opened after a close`) : fail('no reconnect after close');
-app.store.conn === 'reconnecting' || app.store.conn === 'open' ? ok(`conn state ${app.store.conn}`) : fail(`conn ${app.store.conn}`);
+if (isStatic) {
+  app.store.conn === 'static' ? ok(`static mode: conn=static, ${app.store.events.length} events applied from the export, no socket`) : fail(`static mode: conn=${app.store.conn}`);
+  wsInstances.length === 0 ? ok('no WebSocket opened') : fail(`${wsInstances.length} sockets opened in static mode`);
+} else {
+  ws.onclose(); await new Promise((r) => setTimeout(r, 600));
+  wsInstances.length >= 2 ? ok(`reconnect: ${wsInstances.length} sockets opened after a close`) : fail('no reconnect after close');
+}
+const wantConn = isStatic ? ['static'] : ['reconnecting', 'open'];
+wantConn.includes(app.store.conn) ? ok(`conn state ${app.store.conn}`) : fail(`conn ${app.store.conn}`);
 process.exit(process.exitCode || 0);

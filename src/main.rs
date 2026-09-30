@@ -7,8 +7,10 @@ use std::time::Duration;
 use clap::Parser;
 use tracing::{info, warn};
 
+use chain_viz::auth::{read_cookie, read_cookie_in};
 use chain_viz::bus::Bus;
 use chain_viz::collector::{clients, Collector, Model};
+use chain_viz::public::{self, PublicState};
 use chain_viz::replay::ReplayStatus;
 use chain_viz::rpc::{node_from_url, nodes_from_devnet, NodeConfig};
 use chain_viz::server::{router, AppState};
@@ -32,6 +34,13 @@ struct Cli {
     /// RPC password applied to every --nodes URL without credentials.
     #[arg(long, value_name = "PASSWORD", default_value = "")]
     rpcpassword: String,
+    /// A node's RPC cookie file (`<datadir>/.cookie`, written by ycashd without -rpcuser); its
+    /// user:password applies to every --nodes URL without credentials, ahead of --rpcuser.
+    #[arg(long, value_name = "PATH", conflicts_with = "datadir")]
+    cookie: Option<PathBuf>,
+    /// A node's datadir: reads its .cookie (also regtest/.cookie, testnet3/.cookie).
+    #[arg(long, value_name = "DIR")]
+    datadir: Option<PathBuf>,
     /// ZMQ endpoint of a node: <node id>=<tcp url> (repeatable). Ycash has no getzmqnotifications,
     /// so this or devnet.json's `zmq` map is how chain-viz learns of one.
     #[arg(long, value_name = "ID=URL")]
@@ -60,10 +69,12 @@ struct Cli {
     /// Blocks kept in the model.
     #[arg(long, default_value_t = 5000)]
     keep: u64,
-    /// Public mode: rate-limited API, no node names in responses (C7; not implemented yet).
+    /// Public mode: per-IP rate limit, WebSocket and /api/events caps, and no node address,
+    /// URL, credential or path in any response (node ids stay).
     #[arg(long)]
     public: bool,
-    /// Write a static snapshot the UI can open with no server (C7; not implemented yet).
+    /// Write a static snapshot (index.html + ui/ + snapshot/events/health.json) the UI opens
+    /// with no server, every 30 s and at shutdown.
     #[arg(long, value_name = "DIR")]
     export: Option<PathBuf>,
     /// Write our pid here (removed on exit).
@@ -105,12 +116,14 @@ async fn main() {
     let filter = tracing_subscriber::EnvFilter::try_new(&cli.log).unwrap_or_else(|_| fail("bad --log"));
     tracing_subscriber::fmt().with_env_filter(filter).with_target(false).with_writer(std::io::stderr).init();
 
-    for (flag, set) in
-        [("--replay", cli.replay.is_some()), ("--yolo", !cli.yolo.is_empty()), ("--lightwalletd", cli.lightwalletd.is_some()), ("--public", cli.public), ("--export", cli.export.is_some())]
-    {
+    for (flag, set) in [("--yolo", !cli.yolo.is_empty()), ("--lightwalletd", cli.lightwalletd.is_some())] {
         if set {
             warn!("{} is not implemented yet (ignored)", flag);
         }
+    }
+    let public = cli.public.then(|| Arc::new(PublicState::default()));
+    if public.is_some() {
+        info!("public mode: {} req/s per client (burst {}), {} websockets, {} events per /api/events", public::RATE, public::BURST, public::MAX_WS, public::EVENTS_CAP);
     }
     if let Some(file) = &cli.replay {
         // No node: the model is rebuilt from the file's events and the same server serves it.
@@ -128,9 +141,16 @@ async fn main() {
             ..Default::default()
         }));
         tokio::spawn(chain_viz::replay::run(model.clone(), bus.clone(), events, cli.speed, status.clone()));
-        serve(Arc::new(AppState { model, bus, clients: Vec::new(), replay: Some(status) }), cli.listen, cli.pid_file.clone()).await;
+        serve(Arc::new(AppState { model, bus, clients: Vec::new(), replay: Some(status), public }), cli.listen, cli.pid_file.clone(), cli.export.clone()).await;
         return;
     }
+
+    // Credentials for --nodes URLs without userinfo: the cookie file first, else --rpcuser/--rpcpassword.
+    let (rpcuser, rpcpassword) = match (&cli.cookie, &cli.datadir) {
+        (Some(path), _) => read_cookie(path).unwrap_or_else(|e| fail(&e)),
+        (None, Some(dir)) => read_cookie_in(dir).unwrap_or_else(|e| fail(&e)),
+        (None, None) => (cli.rpcuser.clone(), cli.rpcpassword.clone()),
+    };
 
     // Nodes.
     let mut nodes: Vec<NodeConfig> = Vec::new();
@@ -145,7 +165,7 @@ async fn main() {
     }
     for (i, url) in cli.nodes.iter().enumerate() {
         let id = (nodes.len() + i).to_string();
-        nodes.push(node_from_url(&id, url, &cli.rpcuser, &cli.rpcpassword).unwrap_or_else(|e| fail(&e)));
+        nodes.push(node_from_url(&id, url, &rpcuser, &rpcpassword).unwrap_or_else(|e| fail(&e)));
     }
     if nodes.is_empty() {
         fail("no nodes: pass --devnet <dir> or --nodes <url>[,<url>…]");
@@ -188,23 +208,35 @@ async fn main() {
     let collector = Arc::new(Collector { model: model.clone(), bus: bus.clone(), clients: clients.clone(), poll, devnet_dir: cli.devnet.clone(), backfill: Default::default() });
     collector.start();
 
-    serve(Arc::new(AppState { model, bus, clients, replay: None }), cli.listen, cli.pid_file.clone()).await;
+    serve(Arc::new(AppState { model, bus, clients, replay: None, public }), cli.listen, cli.pid_file.clone(), cli.export.clone()).await;
 }
 
 /// Bind, print the URL, serve until SIGINT/SIGTERM; the pid file lives for the duration.
-async fn serve(state: Arc<AppState>, listen: SocketAddr, pid_file: Option<PathBuf>) {
+/// `--export` writes its directory periodically and once more on the way out.
+async fn serve(state: Arc<AppState>, listen: SocketAddr, pid_file: Option<PathBuf>, export: Option<PathBuf>) {
     if let Some(p) = &pid_file {
         std::fs::write(p, format!("{}\n", std::process::id())).unwrap_or_else(|e| fail(&format!("--pid-file {}: {}", p.display(), e)));
+    }
+    if let Some(dir) = &export {
+        std::fs::create_dir_all(dir).unwrap_or_else(|e| fail(&format!("--export {}: {}", dir.display(), e)));
+        chain_viz::export::spawn(state.clone(), dir.clone());
+    }
+    if !listen.ip().is_loopback() && state.public.is_none() {
+        warn!("listening on a non-loopback address without --public: put a reverse proxy in front or pass --public (README, Hosting)");
     }
     let listener = tokio::net::TcpListener::bind(listen).await.unwrap_or_else(|e| fail(&format!("bind {}: {}", listen, e)));
     let addr = listener.local_addr().unwrap_or(listen);
     println!("listening on http://{}", addr);
-    let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
+    // ConnectInfo gives --public its per-client address.
+    let server = axum::serve(listener, router(state.clone()).into_make_service_with_connect_info::<SocketAddr>()).with_graceful_shutdown(async {
         shutdown_signal().await;
         info!("shutting down");
     });
     if let Err(e) = server.await {
         warn!("server: {}", e);
+    }
+    if let Some(dir) = &export {
+        chain_viz::export::final_export(&state, dir).await;
     }
     if let Some(p) = pid_file {
         let _ = std::fs::remove_file(p);

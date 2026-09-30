@@ -19,6 +19,7 @@ use tracing::debug;
 
 use crate::bus::Bus;
 use crate::collector::Model;
+use crate::public::{self, PublicState};
 use crate::replay::ReplayStatus;
 use crate::rpc::RpcClient;
 
@@ -33,10 +34,57 @@ pub struct AppState {
     pub clients: Vec<RpcClient>,
     /// Set under `--replay`: `/api/health.replay = {file, pos, total, speed}`.
     pub replay: Option<Arc<ReplayStatus>>,
+    /// Set under `--public` (`public.rs`): rate limit, WS cap, events cap, redaction.
+    pub public: Option<Arc<PublicState>>,
+}
+
+impl AppState {
+    /// The last step of every JSON response: under `--public`, redact (`public::redact`).
+    fn finish(&self, mut v: Value) -> Json<Value> {
+        if self.public.is_some() {
+            public::redact(&mut v);
+        }
+        Json(v)
+    }
+    /// `/api/health` as a value (also what `--export` writes).
+    pub async fn health_json(&self) -> Value {
+        let m = self.model.read().await;
+        let majority = m.chain.majority();
+        let up = m.nodes.values().filter(|n| n.up).count();
+        let rpc: BTreeMap<String, BTreeMap<String, u64>> = self.clients.iter().map(|c| (c.id().to_string(), c.counter.snapshot())).collect();
+        json!({
+            "ok": up > 0,
+            "nodes": m.nodes.len(),
+            "nodesUp": up,
+            "tip": majority.as_ref().map(|h| json!({"height": h.height, "hash": h.hash})),
+            "agreeing": majority.as_ref().map(|h| h.nodes.len()),
+            "disagreeing": majority.as_ref().map(|h| h.disagreeing.clone()),
+            "seq": self.bus.last_seq(),
+            "version": env!("CARGO_PKG_VERSION"),
+            "chain": m.chain_name,
+            "rpcCalls": rpc,
+            "replay": self.replay.as_ref().map(|r| r.json()),
+            "public": self.public.is_some(),
+            "wsOpen": self.public.as_ref().map(|p| p.ws_open.load(std::sync::atomic::Ordering::Relaxed)),
+        })
+    }
+    /// `/api/snapshot` as a value (also what `--export` writes).
+    pub async fn snapshot_json(&self) -> Value {
+        let m = self.model.read().await;
+        serde_json::to_value(m.snapshot(self.bus.last_seq(), SNAPSHOT_BLOCKS)).unwrap_or(Value::Null)
+    }
+    /// `/api/events?since=` as a value: capped at `public::EVENTS_CAP` under `--public`.
+    pub fn events_json(&self, since: u64) -> Value {
+        let mut list = self.bus.since(since);
+        if self.public.is_some() {
+            list.truncate(public::EVENTS_CAP);
+        }
+        serde_json::to_value(list).unwrap_or(Value::Null)
+    }
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
-    Router::new()
+    let r = Router::new()
         .route("/", get(index))
         .route("/ui/{*path}", get(ui_file))
         .route("/api/health", get(health))
@@ -44,8 +92,17 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/yellowback", get(yellowback))
         .route("/api/revenue", get(revenue))
         .route("/api/events", get(events))
-        .route("/ws", get(ws))
-        .with_state(state)
+        .route("/ws", get(ws));
+    let r = match &state.public {
+        Some(p) => r.layer(axum::middleware::from_fn_with_state(p.clone(), public::rate_limit)),
+        None => r,
+    };
+    r.with_state(state)
+}
+
+/// Every embedded `ui/` file as (relative path, bytes), for `--export`.
+pub fn ui_files() -> Vec<(String, &'static [u8])> {
+    ui_paths().into_iter().filter_map(|p| UI.get_file(&p).map(|f| (p, f.contents()))).collect()
 }
 
 /// Every path embedded from `ui/` (relative, `/`-separated), for the served-files test.
@@ -91,28 +148,13 @@ fn serve_ui(path: &str) -> Response {
 }
 
 async fn health(State(s): State<Arc<AppState>>) -> Json<Value> {
-    let m = s.model.read().await;
-    let majority = m.chain.majority();
-    let up = m.nodes.values().filter(|n| n.up).count();
-    let rpc: BTreeMap<String, BTreeMap<String, u64>> = s.clients.iter().map(|c| (c.id().to_string(), c.counter.snapshot())).collect();
-    Json(json!({
-        "ok": up > 0,
-        "nodes": m.nodes.len(),
-        "nodesUp": up,
-        "tip": majority.as_ref().map(|h| json!({"height": h.height, "hash": h.hash})),
-        "agreeing": majority.as_ref().map(|h| h.nodes.len()),
-        "disagreeing": majority.as_ref().map(|h| h.disagreeing.clone()),
-        "seq": s.bus.last_seq(),
-        "version": env!("CARGO_PKG_VERSION"),
-        "chain": m.chain_name,
-        "rpcCalls": rpc,
-        "replay": s.replay.as_ref().map(|r| r.json()),
-    }))
+    let v = s.health_json().await;
+    s.finish(v)
 }
 
 async fn snapshot(State(s): State<Arc<AppState>>) -> Json<Value> {
-    let m = s.model.read().await;
-    Json(serde_json::to_value(m.snapshot(s.bus.last_seq(), SNAPSHOT_BLOCKS)).unwrap_or(Value::Null))
+    let v = s.snapshot_json().await;
+    s.finish(v)
 }
 
 /// The health panel's slice: the `yellowback` section plus, per main-chain block, its `yb`
@@ -163,14 +205,26 @@ struct Since {
 }
 
 async fn events(State(s): State<Arc<AppState>>, Query(q): Query<Since>) -> Json<Value> {
-    Json(serde_json::to_value(s.bus.since(q.since)).unwrap_or(Value::Null))
+    s.finish(s.events_json(q.since))
 }
 
 async fn ws(State(s): State<Arc<AppState>>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |socket| ws_session(socket, s))
+    // Under --public the connection is counted before the upgrade; the guard lives with the session.
+    let guard = match &s.public {
+        Some(p) => match p.ws_guard() {
+            Some(g) => Some(g),
+            None => return (StatusCode::SERVICE_UNAVAILABLE, "too many websocket connections").into_response(),
+        },
+        None => None,
+    };
+    upgrade.on_upgrade(move |socket| async move {
+        let _guard = guard;
+        ws_session(socket, s).await
+    })
 }
 
 async fn ws_session(mut socket: WebSocket, s: Arc<AppState>) {
+    let redact = s.public.is_some();
     let mut rx = s.bus.subscribe();
     let hello = json!({"kind": "hello", "seq": s.bus.last_seq(), "version": env!("CARGO_PKG_VERSION")});
     if socket.send(Message::Text(hello.to_string().into())).await.is_err() {
@@ -180,7 +234,14 @@ async fn ws_session(mut socket: WebSocket, s: Arc<AppState>) {
         tokio::select! {
             ev = rx.recv() => match ev {
                 Ok(e) => {
-                    let Ok(text) = serde_json::to_string(&e) else { continue };
+                    let text = if redact {
+                        let Ok(mut v) = serde_json::to_value(&e) else { continue };
+                        public::redact(&mut v);
+                        v.to_string()
+                    } else {
+                        let Ok(text) = serde_json::to_string(&e) else { continue };
+                        text
+                    };
                     if socket.send(Message::Text(text.into())).await.is_err() { return; }
                 }
                 Err(RecvError::Lagged(n)) => {
