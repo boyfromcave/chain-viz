@@ -122,7 +122,11 @@ async fn main() {
         info!("replaying {} ({} events) at speed {}", file.display(), events.len(), cli.speed);
         let status = Arc::new(ReplayStatus::new(file.display().to_string(), events.len() as u64, cli.speed));
         let bus = Arc::new(Bus::new(100_000, None));
-        let model = Arc::new(tokio::sync::RwLock::new(Model { chain: chain_viz::model::chain::ChainModel::new(cli.keep), ..Default::default() }));
+        let model = Arc::new(tokio::sync::RwLock::new(Model {
+            chain: chain_viz::model::chain::ChainModel::new(cli.keep),
+            revenue: chain_viz::model::revenue::RevenueModel::new(cli.keep),
+            ..Default::default()
+        }));
         tokio::spawn(chain_viz::replay::run(model.clone(), bus.clone(), events, cli.speed, status.clone()));
         serve(Arc::new(AppState { model, bus, clients: Vec::new(), replay: Some(status) }), cli.listen, cli.pid_file.clone()).await;
         return;
@@ -178,7 +182,7 @@ async fn main() {
     let bus = Arc::new(Bus::new(100_000, recorder));
     bus.publish(None, None, chain_viz::session::header(nodes.iter().map(|n| n.id.clone()).collect(), chain.clone()));
 
-    let mut model = Model { chain: chain_viz::model::chain::ChainModel::new(cli.keep), ..Default::default() };
+    let mut model = Model { chain: chain_viz::model::chain::ChainModel::new(cli.keep), revenue: chain_viz::model::revenue::RevenueModel::new(cli.keep), ..Default::default() };
     model.chain_name = chain;
     let model = Arc::new(tokio::sync::RwLock::new(model));
     let collector = Arc::new(Collector { model: model.clone(), bus: bus.clone(), clients: clients.clone(), poll, devnet_dir: cli.devnet.clone(), backfill: Default::default() });

@@ -20,6 +20,7 @@ use crate::classify;
 use crate::events::{now, EventKind};
 use crate::model::chain::{ChainModel, ChainSnapshot, Emitted};
 use crate::model::mempool::{MempoolModel, MempoolSnapshot};
+use crate::model::revenue::{usd, RevenueModel};
 use crate::model::yellowback::{BlockYb, YbTx, YellowbackModel, YellowbackSnapshot, HISTORY_PAGE, VAULT_PAGE};
 use crate::rpc::{Block, BlockFull, NodeConfig, RpcClient, RpcError, YedInfo};
 use crate::source::poll::PollSource;
@@ -62,6 +63,8 @@ pub struct Model {
     pub devnet: BTreeMap<String, Value>,
     /// The Yellowback health model (C3).
     pub yellowback: YellowbackModel,
+    /// The revenue ledger (C4).
+    pub revenue: RevenueModel,
 }
 
 #[derive(Serialize)]
@@ -79,6 +82,8 @@ pub struct Snapshot {
     pub yed_info: BTreeMap<String, YedInfo>,
     pub devnet: BTreeMap<String, Value>,
     pub yellowback: YellowbackSnapshot,
+    /// Cumulative revenue rollups (`model/revenue.rs`), never evicted.
+    pub revenue: Value,
 }
 
 impl Model {
@@ -106,6 +111,22 @@ impl Model {
             yed_info: self.yed_info.clone(),
             devnet: self.devnet.clone(),
             yellowback: self.yellowback.snapshot(self.leader(), &self.healthy()),
+            revenue: self.revenue.snapshot(&|h| self.p_mint_at(h)),
+        }
+    }
+
+    /// `pMint` at `height` from the timeline (`yed_gethistory` / live `yed_getstats` rows), the
+    /// price every USD figure of the revenue view uses (C-9).
+    pub fn p_mint_at(&self, height: u64) -> Option<i64> {
+        self.yellowback.history.get(&height).and_then(|r| r.get("pMint")).and_then(Value::as_i64).filter(|p| *p > 0)
+    }
+
+    /// Fill the `usd` of `revenue` events from the price known now.
+    pub fn price_revenue(&self, emitted: &mut [Emitted]) {
+        for e in emitted.iter_mut() {
+            if let EventKind::Revenue { zat, usd: u, .. } = &mut e.kind {
+                *u = e.height.and_then(|h| usd(*zat, self.p_mint_at(h)));
+            }
         }
     }
 }
@@ -295,9 +316,48 @@ impl Collector {
                 info.yb = Some(BlockYb { txs, ..Default::default() });
             }
         }
+        self.revenue_block(client, b).await?;
         if st.yed_enabled == Some(true) {
             self.enrich_block(client, &b.hash, b.height).await?;
         }
+        Ok(())
+    }
+
+    /// C4: the coinbase rows of a fetched block (`getblocksubsidy` once per height, any node),
+    /// once per block hash.
+    async fn revenue_block(&self, client: &RpcClient, b: &BlockFull) -> Result<(), RpcError> {
+        let (wanted, need_subsidy) = {
+            let m = self.model.read().await;
+            (m.revenue.wants_block(&b.hash, b.height), !m.revenue.subsidy_known(b.height))
+        };
+        if !wanted {
+            return Ok(());
+        }
+        let subsidy = if need_subsidy { Some(client.get_block_subsidy(Some(b.height)).await?) } else { None };
+        let mut emitted = {
+            let mut m = self.model.write().await;
+            if let Some(s) = &subsidy {
+                m.revenue.set_subsidy(b.height, s);
+            }
+            if !m.revenue.wants_block(&b.hash, b.height) {
+                return Ok(());
+            }
+            let yb: Vec<String> = m.chain.block(&b.hash).and_then(|i| i.yb.as_ref()).map(|y| y.txs.iter().map(|t| t.txid.clone()).collect()).unwrap_or_default();
+            let ev = m.revenue.on_block(b, &yb);
+            for t in &yb {
+                if let Some(tx) = m.yellowback.tx(t).cloned().filter(|t| t.info.is_some() && t.height == Some(b.height)) {
+                    // enriched before this block was fetched here (another node's walk): attribute now
+                    let enforcing = m.yed_info.get(client.id()).map(|i| i.enforcing).unwrap_or(true);
+                    let more = m.revenue.on_yb_tx(b.height, &tx, enforcing);
+                    let _ = more;
+                }
+            }
+            ev
+        };
+        let m = self.model.read().await;
+        m.price_revenue(&mut emitted);
+        drop(m);
+        self.bus.publish_all(emitted);
         Ok(())
     }
 
@@ -328,6 +388,7 @@ impl Collector {
         }
         let (tag, done) = result?;
         let mut emitted = Vec::new();
+        let mut attributed: Vec<YbTx> = Vec::new();
         {
             let Model { chain, yellowback, .. } = &mut *m;
             if let Some(info) = chain.block_mut(hash).and_then(|i| i.yb.as_mut()) {
@@ -341,12 +402,45 @@ impl Collector {
                         *slot = t.clone();
                     }
                     emitted.push(Emitted { height: Some(height), node: Some(node.clone()), kind: t.event() });
-                    yellowback.upsert_tx(t);
+                    yellowback.upsert_tx(t.clone());
+                    attributed.push(t);
                 }
             }
         }
+        // C4: the ledger rows of the tag (alias) and of each attributed transaction.
+        {
+            let enforcing = m.yed_info.get(&node).map(|i| i.enforcing).unwrap_or(true);
+            if let Some(tag) = m.chain.block(hash).and_then(|b| b.yb.as_ref()).and_then(|y| y.tag.clone()) {
+                m.revenue.on_tag(height, hash, &tag);
+            }
+            let mut rows = Vec::new();
+            for t in &attributed {
+                rows.extend(m.revenue.on_yb_tx(height, t, enforcing));
+            }
+            m.price_revenue(&mut rows);
+            emitted.extend(rows);
+        }
         drop(m);
         self.bus.publish_all(emitted);
+        self.counterfactual(client).await
+    }
+
+    /// C4: `yed_getfeepayee R collat` once per refHeight the ledger's fee rows name, for |E(R)|
+    /// (the counterfactual's denominator). A refusal (FEE-0, out of range) is remembered as
+    /// "no eligible payee" rather than asked again.
+    async fn counterfactual(&self, client: &RpcClient) -> Result<(), RpcError> {
+        for _ in 0..8 {
+            let Some((r, collat)) = self.model.read().await.revenue.next_ref() else { return Ok(()) };
+            let n = match client.yed_getfeepayee(r, collat).await {
+                Ok(v) => Some(v.get("eligible").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)),
+                Err(RpcError::Node { message, .. }) => {
+                    debug!(node = %client.id(), "yed_getfeepayee {}: {}", r, message);
+                    None
+                }
+                Err(e) => return Err(e),
+            };
+            self.model.write().await.revenue.set_eligible(r, n);
+        }
         Ok(())
     }
 

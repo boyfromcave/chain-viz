@@ -147,6 +147,20 @@ pub enum EventKind {
     Note {
         text: String,
     },
+    /// One revenue-ledger row (C4, `model/revenue.rs`); the envelope's `height` is the row's.
+    /// The ledger kind is `entry` (the envelope's `kind` is the event's).
+    Revenue {
+        txid: String,
+        vout: u32,
+        entry: crate::model::revenue::Kind,
+        zat: i64,
+        payee: String,
+        /// At the row height's `pMint` when known at emission ("at pMint"); `/api/revenue` recomputes.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usd: Option<f64>,
+        #[serde(rename = "refHeight", default, skip_serializing_if = "Option::is_none")]
+        ref_height: Option<u64>,
+    },
 }
 
 impl Event {
@@ -172,6 +186,7 @@ impl Event {
             EventKind::DevnetSim(_) => "devnet_sim",
             EventKind::YoloStatus(_) => "yolo_status",
             EventKind::Note { .. } => "note",
+            EventKind::Revenue { .. } => "revenue",
         }
     }
 }

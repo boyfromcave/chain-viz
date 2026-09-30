@@ -301,6 +301,10 @@ impl RpcClient {
     pub async fn yed_validaterawtransaction(&self, hex: &str) -> Result<Value, RpcError> {
         self.call("yed_validaterawtransaction", json!([hex])).await
     }
+    /// `yed_getfeepayee refHeight collateralZat`: E(R), the FEE-1 fee and the default payee (C4).
+    pub async fn yed_getfeepayee(&self, ref_height: u64, collateral_zat: i64) -> Result<Value, RpcError> {
+        self.call("yed_getfeepayee", json!([ref_height, collateral_zat])).await
+    }
 }
 
 // ---- stock RPC shapes (Ycash 4.5: src/rpc/blockchain.cpp, mining.cpp) ----

@@ -42,6 +42,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
         .route("/api/yellowback", get(yellowback))
+        .route("/api/revenue", get(revenue))
         .route("/api/events", get(events))
         .route("/ws", get(ws))
         .with_state(state)
@@ -127,6 +128,32 @@ async fn yellowback(State(s): State<Arc<AppState>>) -> Json<Value> {
         "yellowback": m.yellowback.snapshot(m.leader(), &m.healthy()),
         "blocks": blocks,
     }))
+}
+
+#[derive(Deserialize, Default)]
+struct RevenueQuery {
+    from: Option<u64>,
+    to: Option<u64>,
+    #[serde(default)]
+    by: String,
+}
+
+/// `GET /api/revenue?from=<h>&to=<h>&by=payoutKey|attestor|block` (plan §3.5, C4): the ledger
+/// rolled up over `[from, to]` (default: the whole kept window), USD at each height's `pMint`.
+async fn revenue(State(s): State<Arc<AppState>>, Query(q): Query<RevenueQuery>) -> Json<Value> {
+    let m = s.model.read().await;
+    let (wf, wt) = m.revenue.window().unwrap_or((0, 0));
+    let from = q.from.unwrap_or(wf);
+    let to = q.to.unwrap_or(wt);
+    let by = if q.by.is_empty() { "payoutKey" } else { q.by.as_str() };
+    let mut v = m.revenue.query(from, to, by, &|h| m.p_mint_at(h), &m.yellowback.miners, &m.yellowback.attestors);
+    if let Some(o) = v.as_object_mut() {
+        o.insert("seq".into(), s.bus.last_seq().into());
+        o.insert("tip".into(), m.chain.majority().map(|h| json!({"height": h.height, "hash": h.hash})).unwrap_or(Value::Null));
+        o.insert("enforcing".into(), json!(m.yed_info.values().map(|i| i.enforcing).collect::<Vec<_>>()));
+        o.insert("pMintNow".into(), m.yellowback.stats.get(m.leader().as_deref().unwrap_or("")).map(|st| st.p_mint).into());
+    }
+    Json(v)
 }
 
 #[derive(Deserialize)]

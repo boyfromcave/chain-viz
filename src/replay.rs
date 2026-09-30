@@ -82,6 +82,11 @@ pub fn apply(model: &mut Model, e: &Event) {
         EventKind::DevnetSim(v) => {
             model.devnet.insert("sim".into(), v.clone());
         }
+        EventKind::Revenue { txid, vout, entry, zat, payee, ref_height, .. } => {
+            if let Some(h) = e.height {
+                model.revenue.apply_event(h, crate::model::revenue::Row { height: h, txid: txid.clone(), vout: *vout, kind: *entry, zat: *zat, payee: payee.clone(), ref_height: *ref_height });
+            }
+        }
         // Yellowback, price, stats, attestor, vault and yolo events reach the UI through the bus
         // and `/api/events`; their models (C3, C4) can add their own arm here.
         _ => {}
