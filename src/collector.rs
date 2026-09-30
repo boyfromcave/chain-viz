@@ -205,6 +205,9 @@ impl Collector {
                     }
                 }
                 self.bus.publish_all(emitted);
+                if let Some(floor) = self.model.read().await.chain.floor() {
+                    self.bus.evict_below(floor);
+                }
                 st.head = Some(best);
                 st.side_tips = tips.iter().filter(|t| t.status != "active").map(|t| t.hash.clone()).collect();
             }

@@ -308,12 +308,14 @@ impl ChainModel {
         out
     }
 
+    /// The height below which blocks are evicted (`highest head − keep`), once there is one.
+    pub fn floor(&self) -> Option<u64> {
+        let top = self.heads.values().map(|h| h.height).max()?;
+        (top > self.keep).then(|| top - self.keep)
+    }
+
     fn evict(&mut self) {
-        let Some(top) = self.heads.values().map(|h| h.height).max() else { return };
-        if top <= self.keep {
-            return;
-        }
-        let floor = top - self.keep;
+        let Some(floor) = self.floor() else { return };
         let gone: Vec<String> = self.blocks.values().filter(|b| b.height < floor).map(|b| b.hash.clone()).collect();
         for h in gone {
             if let Some(b) = self.blocks.remove(&h) {
