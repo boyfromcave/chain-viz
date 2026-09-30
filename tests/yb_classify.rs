@@ -45,7 +45,7 @@ fn every_recorded_yellowback_tx_is_found_with_the_nodes_type() {
         assert_eq!(p.version, 3);
     }
     // the fixture must cover the tx kinds the devnet produces (record more with the script in the plan's C3 notes)
-    for want in ["mint", "transfer", "register", "redeem/owner"] {
+    for want in ["mint", "transfer", "register", "redeem/owner", "redeem/claim", "notice"] {
         assert!(kinds.contains(want), "fixture lacks a {} tx: have {:?}", want, kinds);
     }
 }
