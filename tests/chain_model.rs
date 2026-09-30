@@ -205,7 +205,13 @@ fn competing_block_then_orphaned() {
     let re = reorgs(step2);
     assert_eq!(re.len(), 1, "{:?}", kinds(step2));
     assert_eq!((re[0].0.as_str(), re[0].1, re[0].2.as_str()), ("3", 1, competing.as_str()));
-    let orphaned: Vec<String> = step2.iter().filter_map(|e| match &e.kind { EventKind::Orphaned { hash } => Some(hash.clone()), _ => None }).collect();
+    let orphaned: Vec<String> = step2
+        .iter()
+        .filter_map(|e| match &e.kind {
+            EventKind::Orphaned { hash } => Some(hash.clone()),
+            _ => None,
+        })
+        .collect();
     assert_eq!(orphaned.as_slice(), std::slice::from_ref(&competing));
     let m = r.model.majority().unwrap();
     assert_eq!(m.nodes, ["0", "2", "3"]);

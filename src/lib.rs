@@ -7,6 +7,8 @@ pub mod classify;
 pub mod collector;
 pub mod events;
 pub mod model;
+pub mod replay;
 pub mod rpc;
 pub mod server;
+pub mod session;
 pub mod source;

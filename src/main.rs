@@ -9,9 +9,10 @@ use tracing::{info, warn};
 
 use chain_viz::bus::Bus;
 use chain_viz::collector::{clients, Collector, Model};
-use chain_viz::events::{EventKind, Recorder, SCHEMA_VERSION};
+use chain_viz::replay::ReplayStatus;
 use chain_viz::rpc::{node_from_url, nodes_from_devnet, NodeConfig};
 use chain_viz::server::{router, AppState};
+use chain_viz::session::Recorder;
 
 /// Real-time x-ray of a Ycash chain and its Yellowback overlay. Read-only: it never holds a
 /// key, never broadcasts, never calls a `yed_*` writer.
@@ -44,10 +45,10 @@ struct Cli {
     /// Append every event to <dir>/session.jsonl.
     #[arg(long, value_name = "DIR")]
     record: Option<PathBuf>,
-    /// Serve from a recorded session file, no node (C6; not implemented yet).
+    /// Serve from a recorded session file, no node.
     #[arg(long, value_name = "FILE")]
     replay: Option<PathBuf>,
-    /// Replay speed multiplier (with --replay).
+    /// Replay speed multiplier (with --replay; 0 = as fast as possible).
     #[arg(long, default_value_t = 1.0)]
     speed: f64,
     /// yolo /status URLs (C4; not implemented yet).
@@ -104,13 +105,27 @@ async fn main() {
     let filter = tracing_subscriber::EnvFilter::try_new(&cli.log).unwrap_or_else(|_| fail("bad --log"));
     tracing_subscriber::fmt().with_env_filter(filter).with_target(false).with_writer(std::io::stderr).init();
 
-    for (flag, set) in [("--replay", cli.replay.is_some()), ("--yolo", !cli.yolo.is_empty()), ("--lightwalletd", cli.lightwalletd.is_some()), ("--public", cli.public), ("--export", cli.export.is_some())] {
+    for (flag, set) in
+        [("--replay", cli.replay.is_some()), ("--yolo", !cli.yolo.is_empty()), ("--lightwalletd", cli.lightwalletd.is_some()), ("--public", cli.public), ("--export", cli.export.is_some())]
+    {
         if set {
             warn!("{} is not implemented yet (ignored)", flag);
         }
     }
-    if cli.replay.is_some() {
-        fail("--replay is not implemented yet");
+    if let Some(file) = &cli.replay {
+        // No node: the model is rebuilt from the file's events and the same server serves it.
+        let text = std::fs::read_to_string(file).unwrap_or_else(|e| fail(&format!("--replay {}: {}", file.display(), e)));
+        let events = chain_viz::session::read_session(&text).unwrap_or_else(|e| fail(&format!("--replay {}: {}", file.display(), e)));
+        if cli.speed < 0.0 {
+            fail("--speed must be >= 0 (0 = as fast as possible)");
+        }
+        info!("replaying {} ({} events) at speed {}", file.display(), events.len(), cli.speed);
+        let status = Arc::new(ReplayStatus::new(file.display().to_string(), events.len() as u64, cli.speed));
+        let bus = Arc::new(Bus::new(100_000, None));
+        let model = Arc::new(tokio::sync::RwLock::new(Model { chain: chain_viz::model::chain::ChainModel::new(cli.keep), ..Default::default() }));
+        tokio::spawn(chain_viz::replay::run(model.clone(), bus.clone(), events, cli.speed, status.clone()));
+        serve(Arc::new(AppState { model, bus, clients: Vec::new(), replay: Some(status) }), cli.listen, cli.pid_file.clone()).await;
+        return;
     }
 
     // Nodes.
@@ -131,11 +146,8 @@ async fn main() {
     if nodes.is_empty() {
         fail("no nodes: pass --devnet <dir> or --nodes <url>[,<url>…]");
     }
-    let zmq: HashMap<String, String> = cli
-        .zmq
-        .iter()
-        .map(|s| s.split_once('=').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_else(|| fail(&format!("--zmq {}: want <node id>=<tcp url>", s))))
-        .collect();
+    let zmq: HashMap<String, String> =
+        cli.zmq.iter().map(|s| s.split_once('=').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_else(|| fail(&format!("--zmq {}: want <node id>=<tcp url>", s)))).collect();
     for n in &mut nodes {
         if let Some(u) = zmq.get(&n.id) {
             n.zmq = Some(u.clone());
@@ -164,7 +176,7 @@ async fn main() {
         info!("recording to {}", r.path().display());
     }
     let bus = Arc::new(Bus::new(100_000, recorder));
-    bus.publish(None, None, EventKind::Session { version: SCHEMA_VERSION, nodes: nodes.iter().map(|n| n.id.clone()).collect(), chain: chain.clone(), started: Some(chain_viz::events::now()) });
+    bus.publish(None, None, chain_viz::session::header(nodes.iter().map(|n| n.id.clone()).collect(), chain.clone()));
 
     let mut model = Model { chain: chain_viz::model::chain::ChainModel::new(cli.keep), ..Default::default() };
     model.chain_name = chain;
@@ -172,14 +184,16 @@ async fn main() {
     let collector = Arc::new(Collector { model: model.clone(), bus: bus.clone(), clients: clients.clone(), poll, devnet_dir: cli.devnet.clone(), backfill: Default::default() });
     collector.start();
 
-    let pid_file = cli.pid_file.clone();
+    serve(Arc::new(AppState { model, bus, clients, replay: None }), cli.listen, cli.pid_file.clone()).await;
+}
+
+/// Bind, print the URL, serve until SIGINT/SIGTERM; the pid file lives for the duration.
+async fn serve(state: Arc<AppState>, listen: SocketAddr, pid_file: Option<PathBuf>) {
     if let Some(p) = &pid_file {
         std::fs::write(p, format!("{}\n", std::process::id())).unwrap_or_else(|e| fail(&format!("--pid-file {}: {}", p.display(), e)));
     }
-
-    let state = Arc::new(AppState { model, bus, clients });
-    let listener = tokio::net::TcpListener::bind(cli.listen).await.unwrap_or_else(|e| fail(&format!("bind {}: {}", cli.listen, e)));
-    let addr = listener.local_addr().unwrap_or(cli.listen);
+    let listener = tokio::net::TcpListener::bind(listen).await.unwrap_or_else(|e| fail(&format!("bind {}: {}", listen, e)));
+    let addr = listener.local_addr().unwrap_or(listen);
     println!("listening on http://{}", addr);
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
         shutdown_signal().await;

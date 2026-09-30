@@ -34,20 +34,25 @@ impl Bus {
     }
 
     pub fn publish(&self, height: Option<u64>, node: Option<String>, kind: EventKind) -> Event {
+        self.publish_at(now(), height, node, kind)
+    }
+
+    /// `publish` with an explicit timestamp (replay keeps the recorded one).
+    pub fn publish_at(&self, ts: f64, height: Option<u64>, node: Option<String>, kind: EventKind) -> Event {
+        // seq is taken and the line recorded under the same lock, so session.jsonl is in seq order.
+        let mut log = self.log.lock().unwrap_or_else(|e| e.into_inner());
         let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let event = Event { seq, ts: now(), height, node, kind };
-        {
-            let mut log = self.log.lock().unwrap_or_else(|e| e.into_inner());
-            log.push_back(event.clone());
-            while log.len() > self.max {
-                log.pop_front();
-            }
+        let event = Event { seq, ts, height, node, kind };
+        log.push_back(event.clone());
+        while log.len() > self.max {
+            log.pop_front();
         }
         if let Some(rec) = self.recorder.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
             if let Err(e) = rec.write(&event) {
                 warn!("record: {}", e);
             }
         }
+        drop(log);
         let _ = self.tx.send(event.clone());
         event
     }

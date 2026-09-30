@@ -341,6 +341,62 @@ impl ChainModel {
         }
     }
 
+    /// Replay (`replay.rs`): a recorded `block` event. Inserts or promotes the block to main and
+    /// credits `node`; the head moves only on the `tip` event that follows.
+    pub fn apply_block(&mut self, node: Option<&str>, height: u64, b: &BlockEvent, seen: f64) {
+        let info = self.blocks.entry(b.hash.clone()).or_insert_with(|| BlockInfo {
+            hash: b.hash.clone(),
+            height,
+            prev: b.prev.clone(),
+            time: b.time,
+            tx_count: b.tx_count,
+            size: b.size,
+            chainwork: b.chainwork.clone(),
+            status: BlockStatus::Main,
+            nodes: BTreeSet::new(),
+            seen,
+            txids: Vec::new(),
+        });
+        info.status = BlockStatus::Main;
+        if info.prev.is_none() {
+            info.prev = b.prev.clone();
+        }
+        info.nodes.extend(b.nodes.iter().cloned());
+        if let Some(n) = node {
+            info.nodes.insert(n.to_string());
+        }
+    }
+
+    /// Replay: a recorded `block_side` event (a tip known only from `getchaintips`).
+    pub fn apply_block_side(&mut self, height: u64, b: &BlockEvent, seen: f64) {
+        self.blocks.entry(b.hash.clone()).or_insert_with(|| BlockInfo {
+            hash: b.hash.clone(),
+            height,
+            prev: b.prev.clone(),
+            time: b.time,
+            tx_count: b.tx_count,
+            size: b.size,
+            chainwork: b.chainwork.clone(),
+            status: BlockStatus::Side,
+            nodes: BTreeSet::new(),
+            seen,
+            txids: Vec::new(),
+        });
+    }
+
+    /// Replay: a recorded `tip` event moves `node`'s head.
+    pub fn apply_tip(&mut self, node: &str, height: u64, hash: &str) {
+        self.heads.insert(node.to_string(), Head { height, hash: hash.to_string() });
+        self.evict();
+    }
+
+    /// Replay: a recorded `orphaned` event.
+    pub fn apply_orphaned(&mut self, hash: &str) {
+        if let Some(b) = self.blocks.get_mut(hash) {
+            b.status = BlockStatus::Orphaned;
+        }
+    }
+
     /// The head most nodes are on; ties → the most work (chainwork, then height).
     pub fn majority(&self) -> Option<MajorityHead> {
         let mut by_hash: BTreeMap<&str, Vec<String>> = BTreeMap::new();

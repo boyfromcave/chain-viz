@@ -19,6 +19,7 @@ use tracing::debug;
 
 use crate::bus::Bus;
 use crate::collector::Model;
+use crate::replay::ReplayStatus;
 use crate::rpc::RpcClient;
 
 static UI: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/ui");
@@ -30,6 +31,8 @@ pub struct AppState {
     pub model: Arc<tokio::sync::RwLock<Model>>,
     pub bus: Arc<Bus>,
     pub clients: Vec<RpcClient>,
+    /// Set under `--replay`: `/api/health.replay = {file, pos, total, speed}`.
+    pub replay: Option<Arc<ReplayStatus>>,
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -42,6 +45,22 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/events", get(events))
         .route("/ws", get(ws))
         .with_state(state)
+}
+
+/// Every path embedded from `ui/` (relative, `/`-separated), for the served-files test.
+pub fn ui_paths() -> Vec<String> {
+    fn walk(dir: &Dir<'static>, out: &mut Vec<String>) {
+        for f in dir.files() {
+            out.push(f.path().to_string_lossy().replace('\\', "/"));
+        }
+        for d in dir.dirs() {
+            walk(d, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&UI, &mut out);
+    out.sort();
+    out
 }
 
 async fn index() -> Response {
@@ -86,6 +105,7 @@ async fn health(State(s): State<Arc<AppState>>) -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "chain": m.chain_name,
         "rpcCalls": rpc,
+        "replay": s.replay.as_ref().map(|r| r.json()),
     }))
 }
 
