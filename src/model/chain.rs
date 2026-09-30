@@ -356,6 +356,7 @@ impl ChainModel {
             nodes: BTreeSet::new(),
             seen,
             txids: Vec::new(),
+            yb: None,
         });
         info.status = BlockStatus::Main;
         if info.prev.is_none() {
@@ -381,6 +382,7 @@ impl ChainModel {
             nodes: BTreeSet::new(),
             seen,
             txids: Vec::new(),
+            yb: None,
         });
     }
 

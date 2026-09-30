@@ -123,6 +123,7 @@ impl MempoolModel {
             first_seen: BTreeMap::new(),
             present: BTreeSet::new(),
             depends: e.depends.clone(),
+            yb: None,
         });
         tx.first_seen.entry(node.to_string()).or_insert(now);
         tx.present.insert(node.to_string());
