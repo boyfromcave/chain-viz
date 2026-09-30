@@ -501,6 +501,17 @@ pub struct YedInfo {
     pub extra: Map<String, Value>,
 }
 
+/// `PriceOrNull` fields (`src/rpc/yellowback.cpp`): the node renders an undefined price or
+/// ratio as an explicit `null` (`globalRatioBps` before the first vault, `pFast`… while a window
+/// is unfilled), which `#[serde(default)]` alone rejects (it covers a missing key only).
+fn null_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct YedStats {
@@ -513,7 +524,7 @@ pub struct YedStats {
     pub issued_zat: i64,
     #[serde(default)]
     pub unbacked_cents: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub global_ratio_bps: i64,
     #[serde(default)]
     pub active_vaults: u64,
@@ -523,15 +534,15 @@ pub struct YedStats {
     pub closed_vaults: u64,
     #[serde(default)]
     pub claimed_vaults: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub p_fast: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub p_mid: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub p_slow: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub p_mint: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub p_claim: i64,
     #[serde(default)]
     pub halt_mask: Vec<String>,
