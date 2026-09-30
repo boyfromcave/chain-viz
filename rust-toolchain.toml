@@ -1,0 +1,4 @@
+[toolchain]
+# chain-viz builds on stable. Shields the crate from an enclosing rust-toolchain the way yolo/
+# does (ycash-dd pins 1.51 for librustzcash).
+channel = "stable"

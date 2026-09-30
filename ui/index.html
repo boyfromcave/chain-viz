@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chain-viz</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #667; --line: #ddd; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #99a; --line: #333; } }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  #head { color: var(--muted); margin-bottom: 12px; }
+  #log { white-space: pre-wrap; word-break: break-all; border-top: 1px solid var(--line); padding-top: 8px; }
+  .k { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>chain-viz <span class="k">— live events (placeholder UI; C2 replaces this page)</span></h1>
+<div id="head">connecting…</div>
+<div id="log"></div>
+<script type="module">
+const head = document.getElementById('head'), log = document.getElementById('log');
+let seq = 0;
+function line(e) {
+  const rest = Object.assign({}, e); delete rest.seq; delete rest.ts; delete rest.kind; delete rest.node; delete rest.height;
+  const d = document.createElement('div');
+  d.textContent = `${String(e.seq).padStart(6)} ${new Date(e.ts * 1000).toLocaleTimeString()} ${e.kind.padEnd(18)} ` +
+    `${e.node !== undefined ? 'node' + e.node : '     '} ${e.height !== undefined ? '@' + e.height : ''} ${JSON.stringify(rest)}`;
+  log.prepend(d);
+  while (log.children.length > 500) log.lastChild.remove();
+  if (e.seq) seq = Math.max(seq, e.seq);
+}
+async function resync() {
+  const h = await (await fetch('/api/health')).json();
+  head.textContent = `${h.chain} · ${h.nodesUp}/${h.nodes} nodes up · tip ${h.tip ? h.tip.height + ' ' + h.tip.hash.slice(-12) : '?'} · ${h.agreeing ?? '?'} agree · seq ${h.seq}`;
+  const events = await (await fetch('/api/events?since=' + seq)).json();
+  for (const e of events) line(e);
+}
+function connect() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.onmessage = (m) => { const e = JSON.parse(m.data); if (e.kind === 'hello' || e.kind === 'lagged') { resync(); return; } line(e); if (e.kind === 'tip' || e.kind === 'note') resync(); };
+  ws.onclose = () => { head.textContent = 'disconnected — retrying'; setTimeout(connect, 1000); };
+}
+resync().then(connect);
+</script>
+</body>
+</html>
