@@ -16,8 +16,8 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::bus::Bus;
-use crate::events::{now, EventKind};
 use crate::classify;
+use crate::events::{now, EventKind};
 use crate::model::chain::{ChainModel, ChainSnapshot, Emitted};
 use crate::model::mempool::{MempoolModel, MempoolSnapshot};
 use crate::model::yellowback::{BlockYb, YbTx, YellowbackModel, YellowbackSnapshot, HISTORY_PAGE, VAULT_PAGE};

@@ -294,11 +294,7 @@ impl YellowbackModel {
             let before: BTreeSet<&str> = prev.halt_mask.iter().map(String::as_str).collect();
             let after: BTreeSet<&str> = stats.halt_mask.iter().map(String::as_str).collect();
             if before != after {
-                out.push(Emitted {
-                    height,
-                    node: Some(node.to_string()),
-                    kind: EventKind::YbState { field: "haltMask".into(), from: json!(prev.halt_mask), to: json!(stats.halt_mask) },
-                });
+                out.push(Emitted { height, node: Some(node.to_string()), kind: EventKind::YbState { field: "haltMask".into(), from: json!(prev.halt_mask), to: json!(stats.halt_mask) } });
             }
             if prev.minting_allowed != stats.minting_allowed {
                 out.push(Emitted {
@@ -354,11 +350,7 @@ impl YellowbackModel {
         let same: BTreeMap<&String, &String> = self.statehash.iter().filter(|(n, s)| s.blockhash == h.blockhash && healthy.contains(*n)).map(|(n, s)| (n, &s.statehash)).collect();
         let distinct: BTreeSet<&String> = same.values().copied().collect();
         if distinct.len() > 1 && self.alarmed.insert(h.blockhash.clone()) {
-            return Some(Emitted {
-                height: Some(h.height),
-                node: None,
-                kind: EventKind::StatehashMismatch { hash: h.blockhash.clone(), hashes: json!(same) },
-            });
+            return Some(Emitted { height: Some(h.height), node: None, kind: EventKind::StatehashMismatch { hash: h.blockhash.clone(), hashes: json!(same) } });
         }
         None
     }
@@ -535,7 +527,16 @@ pub fn history_row_from_stats(s: &YedStats) -> Value {
     let mut o = Map::new();
     o.insert("height".into(), s.height.into());
     o.insert("live".into(), true.into());
-    for (k, v) in [("pFast", s.p_fast), ("pMid", s.p_mid), ("pSlow", s.p_slow), ("pMint", s.p_mint), ("pClaim", s.p_claim), ("supplyCents", s.supply_cents), ("collateralZat", s.collateral_zat), ("issuedZat", s.issued_zat)] {
+    for (k, v) in [
+        ("pFast", s.p_fast),
+        ("pMid", s.p_mid),
+        ("pSlow", s.p_slow),
+        ("pMint", s.p_mint),
+        ("pClaim", s.p_claim),
+        ("supplyCents", s.supply_cents),
+        ("collateralZat", s.collateral_zat),
+        ("issuedZat", s.issued_zat),
+    ] {
         o.insert(k.into(), v.into());
     }
     o.insert("globalRatioBps".into(), if s.global_ratio_bps == 0 && s.supply_cents == 0 { Value::Null } else { s.global_ratio_bps.into() });
