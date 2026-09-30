@@ -76,6 +76,23 @@ struct Cli {
     log: String,
 }
 
+/// SIGINT or SIGTERM (the devnet's `down` sends the latter).
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
 fn fail(msg: &str) -> ! {
     eprintln!("chain-viz: {}", msg);
     std::process::exit(2)
@@ -152,7 +169,7 @@ async fn main() {
     let mut model = Model { chain: chain_viz::model::chain::ChainModel::new(cli.keep), ..Default::default() };
     model.chain_name = chain;
     let model = Arc::new(tokio::sync::RwLock::new(model));
-    let collector = Arc::new(Collector { model: model.clone(), bus: bus.clone(), clients: clients.clone(), poll, devnet_dir: cli.devnet.clone() });
+    let collector = Arc::new(Collector { model: model.clone(), bus: bus.clone(), clients: clients.clone(), poll, devnet_dir: cli.devnet.clone(), backfill: Default::default() });
     collector.start();
 
     let pid_file = cli.pid_file.clone();
@@ -165,7 +182,7 @@ async fn main() {
     let addr = listener.local_addr().unwrap_or(cli.listen);
     println!("listening on http://{}", addr);
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
+        shutdown_signal().await;
         info!("shutting down");
     });
     if let Err(e) = server.await {

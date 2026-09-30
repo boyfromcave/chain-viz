@@ -42,7 +42,11 @@ pub fn nodes_from_devnet(devnet: &Value) -> Result<Vec<NodeConfig>, String> {
     let attestors: Vec<u64> = devnet.get("attestors").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
     let mut nodes = Vec::new();
     for (id, entry) in rpc {
-        let url = entry.get("url").and_then(Value::as_str).ok_or_else(|| format!("devnet.json: rpc.{}: no url", id))?;
+        let raw = entry.get("url").and_then(Value::as_str).ok_or_else(|| format!("devnet.json: rpc.{}: no url", id))?;
+        // The devnet's url embeds the credentials as userinfo (`http://rpcuser💻0:rpcpass🔑0@…`,
+        // non-ASCII: `qa/rpc-tests/test_framework/util.py`); the separate fields are authoritative
+        // and the Authorization header carries them, so the URL is kept host:port only.
+        let parsed = node_from_url(id, raw, "", "")?;
         let n: u64 = id.parse().unwrap_or(u64::MAX);
         let role = match n {
             0 => Some("user"),
@@ -53,9 +57,9 @@ pub fn nodes_from_devnet(devnet: &Value) -> Result<Vec<NodeConfig>, String> {
         };
         nodes.push(NodeConfig {
             id: id.clone(),
-            url: url.to_string(),
-            user: entry.get("user").and_then(Value::as_str).unwrap_or("").to_string(),
-            password: entry.get("password").and_then(Value::as_str).unwrap_or("").to_string(),
+            url: parsed.url,
+            user: entry.get("user").and_then(Value::as_str).map(str::to_string).unwrap_or(parsed.user),
+            password: entry.get("password").and_then(Value::as_str).map(str::to_string).unwrap_or(parsed.password),
             zmq: zmq.and_then(|z| z.get(id)).and_then(Value::as_str).map(str::to_string),
             role: role.map(str::to_string),
         });
@@ -497,7 +501,7 @@ mod tests {
     #[test]
     fn devnet_json_nodes() {
         let d = json!({"pools": [2,3,4], "attestors": [5,6,7], "rpc": {
-            "1": {"url": "http://127.0.0.1:16001", "port": 16001, "user": "rt", "password": "rt1"},
+            "1": {"url": "http://rpcuser💻1:rpcpass🔑1@127.0.0.1:16001", "port": 16001, "user": "rpcuser💻1", "password": "rpcpass🔑1"},
             "0": {"url": "http://127.0.0.1:16000", "port": 16000, "user": "rt", "password": "rt0"},
             "2": {"url": "http://127.0.0.1:16002", "port": 16002, "user": "rt", "password": "rt2"}},
             "zmq": {"2": "tcp://127.0.0.1:28002"}});
@@ -507,6 +511,8 @@ mod tests {
         assert_eq!(n[2].role.as_deref(), Some("pool"));
         assert_eq!(n[1].role.as_deref(), Some("stock"));
         assert_eq!(n[0].password, "rt0");
+        assert_eq!(n[1].url, "http://127.0.0.1:16001");
+        assert_eq!(n[1].password, "rpcpass🔑1");
     }
 
     #[test]

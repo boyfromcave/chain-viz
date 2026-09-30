@@ -26,6 +26,8 @@ use crate::source::{Source, Wake};
 
 /// How far back the first fetch of a node walks when the model is empty.
 pub const BACKFILL: u64 = 20;
+/// `getchaintips` is refreshed on every head move and every this many polls otherwise.
+pub const TIPS_EVERY: u64 = 10;
 
 /// What the snapshot says about one node (never its URL or credentials).
 #[derive(Debug, Clone, Serialize)]
@@ -95,6 +97,8 @@ pub struct Collector {
     pub clients: Vec<RpcClient>,
     pub poll: Duration,
     pub devnet_dir: Option<PathBuf>,
+    /// Serializes each node's first fetch so only the first one walks `BACKFILL` blocks.
+    pub backfill: tokio::sync::Mutex<()>,
 }
 
 impl Collector {
@@ -174,12 +178,24 @@ impl Collector {
         }
         if want_head {
             let best = client.get_best_block_hash().await?;
-            if st.head.as_deref() != Some(&best) {
-                let path = self.fetch_path(client, &best, st.head.is_none()).await?;
+            st.ticks += 1;
+            // Tips are refreshed when the head moved and every TIPS_EVERY polls besides: a
+            // competing block that reaches a node as a header only (`valid-headers`) moves no
+            // head anywhere, and getchaintips walks the whole block index, so not every poll.
+            if st.head.as_deref() != Some(&best) || st.ticks % TIPS_EVERY == 0 {
+                let path = if st.head.as_deref() != Some(&best) {
+                    let first = st.head.is_none();
+                    let guard = if first { Some(self.backfill.lock().await) } else { None };
+                    let path = self.fetch_path(client, &best, first).await?;
+                    drop(guard);
+                    path
+                } else {
+                    Vec::new()
+                };
                 let tips = client.get_chain_tips().await?;
                 let emitted = {
                     let mut m = self.model.write().await;
-                    let mut ev = m.chain.on_new_head(&node, &path, now());
+                    let mut ev = if path.is_empty() { Vec::new() } else { m.chain.on_new_head(&node, &path, now()) };
                     ev.extend(m.chain.on_chain_tips(&node, tips.clone(), now()));
                     ev
                 };
@@ -304,6 +320,7 @@ impl Collector {
 struct NodeState {
     chain_name: Option<String>,
     head: Option<String>,
+    ticks: u64,
     yed_enabled: Option<bool>,
     side_tips: Vec<String>,
     verdicts: HashSet<String>,
