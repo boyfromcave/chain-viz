@@ -86,9 +86,11 @@ impl Model {
     pub fn healthy(&self) -> BTreeSet<String> {
         self.nodes.values().filter(|n| n.up && self.yed_info.get(&n.id).map(|i| i.healthy).unwrap_or(false)).map(|n| n.id.clone()).collect()
     }
-    /// The lowest-id node that is up and has `yed_*`: whose chain-wide answers are shown.
+    /// The lowest-id node not known to be stock or down: whose chain-wide answers are shown.
+    /// Deterministic from the start (every node begins unknown), so the startup race between
+    /// eleven first polls elects one leader, not several.
     pub fn leader(&self) -> Option<String> {
-        self.nodes.values().filter(|n| n.up && n.yellowback == Some(true)).map(|n| n.id.clone()).min_by_key(|id| id.parse::<u64>().unwrap_or(u64::MAX))
+        self.nodes.values().filter(|n| n.yellowback != Some(false) && n.error.is_none()).map(|n| n.id.clone()).min_by_key(|id| id.parse::<u64>().unwrap_or(u64::MAX))
     }
 
     pub fn snapshot(&self, seq: u64, blocks: usize) -> Snapshot {
@@ -201,6 +203,9 @@ impl Collector {
                 Err(e) if e.is_method_not_found() => st.yed_enabled = Some(false),
                 Err(e) => return Err(e),
             }
+            if let Some(v) = self.model.write().await.nodes.get_mut(&node) {
+                v.yellowback = st.yed_enabled;
+            }
         }
         if want_head {
             let best = client.get_best_block_hash().await?;
@@ -301,17 +306,57 @@ impl Collector {
     /// again once, for its confirmed row).
     async fn enrich_block(&self, client: &RpcClient, hash: &str, height: u64) -> Result<(), RpcError> {
         let node = client.id().to_string();
+        // Claim the block and each pending tx under the lock, so eleven node tasks seeing the
+        // same block spend one yed_gettag and one yed_gettxinfo per tx between them.
         let (needs_tag, pending): (bool, Vec<YbTx>) = {
-            let m = self.model.read().await;
-            let Some(yb) = m.chain.block(hash).and_then(|b| b.yb.as_ref()) else { return Ok(()) };
-            (!yb.tagged, yb.txs.iter().filter(|t| t.height.is_none() || t.info.is_none()).cloned().collect())
+            let mut m = self.model.write().await;
+            let Model { chain, yellowback, .. } = &mut *m;
+            let Some(yb) = chain.block(hash).and_then(|b| b.yb.as_ref()) else { return Ok(()) };
+            let needs_tag = !yb.tagged && yellowback.claim(hash);
+            let pending: Vec<YbTx> = yb.txs.iter().filter(|t| t.height.is_none() || t.info.is_none()).cloned().collect();
+            let pending = pending.into_iter().filter(|t| yellowback.claim(&t.txid)).collect();
+            (needs_tag, pending)
         };
         if !needs_tag && pending.is_empty() {
             return Ok(());
         }
+        let result = self.enrich_calls(client, hash, height, needs_tag, &pending).await;
+        let mut m = self.model.write().await;
+        m.yellowback.release(hash);
+        for t in &pending {
+            m.yellowback.release(&t.txid);
+        }
+        let (tag, done) = result?;
+        let mut emitted = Vec::new();
+        {
+            let Model { chain, yellowback, .. } = &mut *m;
+            if let Some(info) = chain.block_mut(hash).and_then(|i| i.yb.as_mut()) {
+                if let Some(tag) = tag {
+                    info.miner = tag.get("payoutAddress").and_then(Value::as_str).map(str::to_string).filter(|_| tag.get("found").and_then(Value::as_bool).unwrap_or(false));
+                    info.tag = Some(tag);
+                    info.tagged = true;
+                }
+                for t in done {
+                    if let Some(slot) = info.txs.iter_mut().find(|x| x.txid == t.txid) {
+                        *slot = t.clone();
+                    }
+                    emitted.push(Emitted { height: Some(height), node: Some(node.clone()), kind: t.event() });
+                    yellowback.upsert_tx(t);
+                }
+            }
+        }
+        drop(m);
+        self.bus.publish_all(emitted);
+        Ok(())
+    }
+
+    /// The RPCs of `enrich_block`, outside the model lock.
+    async fn enrich_calls(&self, client: &RpcClient, hash: &str, height: u64, needs_tag: bool, pending: &[YbTx]) -> Result<(Option<Value>, Vec<YbTx>), RpcError> {
+        let node = client.id().to_string();
         let tag = if needs_tag { Some(client.yed_gettag(hash).await?) } else { None };
         let mut done = Vec::new();
-        for mut t in pending {
+        for t in pending {
+            let mut t = t.clone();
             match client.yed_gettxinfo(&t.txid).await {
                 Ok(info) => {
                     t.apply(&info, Some(height));
@@ -330,27 +375,7 @@ impl Collector {
                 Err(e) => return Err(e),
             }
         }
-        let mut emitted = Vec::new();
-        {
-            let mut m = self.model.write().await;
-            let Model { chain, yellowback, .. } = &mut *m;
-            if let Some(info) = chain.block_mut(hash).and_then(|i| i.yb.as_mut()) {
-                if let Some(tag) = tag {
-                    info.miner = tag.get("payoutAddress").and_then(Value::as_str).map(str::to_string).filter(|_| tag.get("found").and_then(Value::as_bool).unwrap_or(false));
-                    info.tag = Some(tag);
-                    info.tagged = true;
-                }
-                for t in done {
-                    if let Some(slot) = info.txs.iter_mut().find(|x| x.txid == t.txid) {
-                        *slot = t.clone();
-                    }
-                    emitted.push(Emitted { height: Some(height), node: Some(node.clone()), kind: t.event() });
-                    yellowback.upsert_tx(t);
-                }
-            }
-        }
-        self.bus.publish_all(emitted);
-        Ok(())
+        Ok((tag, done))
     }
 
     /// Blocks a stock node fetched (the backfill, or a block it saw first) that no `yed_*`
@@ -445,10 +470,7 @@ impl Collector {
         let node = client.id().to_string();
         let leader = {
             let m = self.model.read().await;
-            // The lowest-id yed_* node that is up; this node counts even before its first
-            // step marked it up.
-            let me = node.parse::<u64>().unwrap_or(u64::MAX);
-            m.leader().map(|l| l.parse::<u64>().unwrap_or(u64::MAX) >= me).unwrap_or(true)
+            m.leader().as_deref() == Some(&node)
         };
         let stats = client.yed_getstats().await?;
         let mut emitted = Vec::new();
@@ -456,7 +478,12 @@ impl Collector {
             let mut m = self.model.write().await;
             emitted.extend(m.yellowback.on_stats(&node, stats.clone(), leader));
             let start = m.yed_info.get(&node).and_then(|i| i.params.get("startHeight")).and_then(Value::as_u64).unwrap_or(1);
-            let from = if leader && m.yellowback.backfilled_to.is_none() { Some(m.yellowback.backfill_from(stats.height, start)) } else { None };
+            let from = if leader && !m.yellowback.backfilling {
+                m.yellowback.backfilling = true;
+                Some(m.yellowback.backfill_from(stats.height, start))
+            } else {
+                None
+            };
             (m.yellowback.vaults_stale(&stats), from)
         };
         match client.yed_getstatehash().await {

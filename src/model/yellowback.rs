@@ -217,6 +217,10 @@ pub struct YellowbackModel {
     checked: BTreeSet<String>,
     /// Raw hex of mempool Yellowback txs a stock node classified, until a `yed_*` node validates.
     raw: HashMap<String, String>,
+    /// Block hashes / txids some node task is enriching right now (one RPC per block, per tx).
+    claims: BTreeSet<String>,
+    /// The `yed_gethistory` backfill is running or done.
+    pub backfilling: bool,
     pub rejected: Vec<RejectedBlock>,
     pub mock_price: Option<f64>,
     pub attest_prices: BTreeMap<String, f64>,
@@ -248,6 +252,8 @@ impl YellowbackModel {
             order: Vec::new(),
             checked: BTreeSet::new(),
             raw: HashMap::new(),
+            claims: BTreeSet::new(),
+            backfilling: false,
             rejected: Vec::new(),
             mock_price: None,
             attest_prices: BTreeMap::new(),
@@ -453,6 +459,14 @@ impl YellowbackModel {
             self.checked.clear();
         }
         self.checked.insert(txid.to_string())
+    }
+
+    /// Take the right to enrich `key` (a block hash or txid); `false` if another task holds it.
+    pub fn claim(&mut self, key: &str) -> bool {
+        self.claims.insert(key.to_string())
+    }
+    pub fn release(&mut self, key: &str) {
+        self.claims.remove(key);
     }
 
     pub fn keep_raw(&mut self, txid: &str, hex: &str) {
