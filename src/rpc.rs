@@ -33,11 +33,14 @@ pub struct NodeConfig {
 }
 
 /// Parse `<dir>/devnet.json` as `yellowback-devnet up` writes it (`yellowback-devnet:723-731`):
-/// `rpc: {"<n>": {url, port, user, password}}`, plus an optional `zmq: {"<n>": "tcp://…"}` the
-/// devnet may add later (C4). Node ids come back in numeric order.
+/// `rpc: {"<n>": {url, port, user, password}}`, plus the per-node map C4's devnet adds,
+/// `nodes: {"<n>": {zmq: {hashblock, hashtx}}}` (both URLs equal: ycashd publishes every topic
+/// on one PUB socket per address, C-F-1). An older flat `zmq: {"<n>": "tcp://…"}` map is the
+/// fallback. Node ids come back in numeric order.
 pub fn nodes_from_devnet(devnet: &Value) -> Result<Vec<NodeConfig>, String> {
     let rpc = devnet.get("rpc").and_then(Value::as_object).ok_or("devnet.json: no \"rpc\" map")?;
     let zmq = devnet.get("zmq").and_then(Value::as_object);
+    let per_node = devnet.get("nodes").and_then(Value::as_object);
     let pools: Vec<u64> = devnet.get("pools").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
     let attestors: Vec<u64> = devnet.get("attestors").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
     let mut nodes = Vec::new();
@@ -60,12 +63,25 @@ pub fn nodes_from_devnet(devnet: &Value) -> Result<Vec<NodeConfig>, String> {
             url: parsed.url,
             user: entry.get("user").and_then(Value::as_str).map(str::to_string).unwrap_or(parsed.user),
             password: entry.get("password").and_then(Value::as_str).map(str::to_string).unwrap_or(parsed.password),
-            zmq: zmq.and_then(|z| z.get(id)).and_then(Value::as_str).map(str::to_string),
+            zmq: zmq_endpoint(per_node.and_then(|n| n.get(id))).or_else(|| zmq.and_then(|z| z.get(id)).and_then(Value::as_str).map(str::to_string)),
             role: role.map(str::to_string),
         });
     }
     nodes.sort_by_key(|n| n.id.parse::<u64>().unwrap_or(u64::MAX));
     Ok(nodes)
+}
+
+/// `nodes[n].zmq`: `{hashblock, hashtx}` (a string is accepted too). One endpoint per node:
+/// `hashblock` wins, `hashtx` counts only when it differs (then it is not subscribed; the
+/// collector wakes on blocks and refreshes the mempool on the same wake).
+fn zmq_endpoint(node: Option<&Value>) -> Option<String> {
+    let z = node?.get("zmq")?;
+    if let Some(s) = z.as_str() {
+        return Some(s.to_string());
+    }
+    let block = z.get("hashblock").and_then(Value::as_str);
+    let tx = z.get("hashtx").and_then(Value::as_str);
+    block.or(tx).map(str::to_string)
 }
 
 /// Parse one `--nodes` entry: `http://user:pass@host:port` or `http://host:port` (then the
@@ -513,6 +529,22 @@ mod tests {
         assert_eq!(n[0].password, "rt0");
         assert_eq!(n[1].url, "http://127.0.0.1:16001");
         assert_eq!(n[1].password, "rpcpass🔑1");
+    }
+
+    #[test]
+    fn devnet_json_nodes_zmq_map() {
+        let d = json!({"rpc": {
+            "0": {"url": "http://127.0.0.1:16000", "user": "u", "password": "p"},
+            "1": {"url": "http://127.0.0.1:16001", "user": "u", "password": "p"},
+            "2": {"url": "http://127.0.0.1:16002", "user": "u", "password": "p"}},
+            "nodes": {
+                "0": {"zmq": {"hashblock": "tcp://127.0.0.1:31516", "hashtx": "tcp://127.0.0.1:31516"}},
+                "1": {"zmq": {"hashtx": "tcp://127.0.0.1:31517"}}},
+            "zmq": {"0": "tcp://127.0.0.1:1", "2": "tcp://127.0.0.1:31518"}});
+        let n = nodes_from_devnet(&d).unwrap();
+        assert_eq!(n[0].zmq.as_deref(), Some("tcp://127.0.0.1:31516"), "nodes map wins over the flat map");
+        assert_eq!(n[1].zmq.as_deref(), Some("tcp://127.0.0.1:31517"));
+        assert_eq!(n[2].zmq.as_deref(), Some("tcp://127.0.0.1:31518"), "flat map is the fallback");
     }
 
     #[test]
