@@ -1,0 +1,473 @@
+{
+ "name": "orphan",
+ "source": "recorded from yellowback-devnet (regtest, ycash-dd feature/yellowback-price-attest) by record_fixture.py",
+ "nodes": [
+  "0",
+  "2",
+  "3"
+ ],
+ "steps": [
+  {
+   "label": "initial",
+   "nodes": [
+    {
+     "node": "0",
+     "best": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+     "blocks": [
+      {
+       "hash": "0ee13602f84cfc2cde0a40251acdbdbc9bffc9a1d7c6b7ae335e84e8856eb810",
+       "confirmations": 4,
+       "size": 321,
+       "height": 257,
+       "version": 4,
+       "merkleroot": "31927759698b752810652ae232ac9a1572122be63db75486abd20b4fbe7a05b8",
+       "finalsaplingroot": "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb",
+       "chainhistoryroot": "b43875ac4e9ee8b99575e5ef2cd7370260a5cea541091117046a7cd446219b6c",
+       "tx": [
+        "31927759698b752810652ae232ac9a1572122be63db75486abd20b4fbe7a05b8"
+       ],
+       "time": 1790730303,
+       "nonce": "0000b0e7aef5803e33d85e5ece03d282713c4d4afc0106fb2fa0ba0846360017",
+       "solution": "035e4c9ef5af1589cf27b2d2f4b5840ab9680c1086ad94ad8221e635c312d173731577d4",
+       "bits": "200f0f0f",
+       "difficulty": 1,
+       "chainwork": "0000000000000000000000000000000000000000000000000000000000001122",
+       "anchor": "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7",
+       "valuePools": [
+        {
+         "id": "sprout",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        },
+        {
+         "id": "sapling",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        }
+       ],
+       "previousblockhash": "0b2203e207f691615c11a5717b24edb2930722afd943952861b3a063b7371afb",
+       "nextblockhash": "0a9b9f0f49490fb575f7e3639d70a8196f580e1df2fc7f3bf3491b60bfa96cd6"
+      },
+      {
+       "hash": "0a9b9f0f49490fb575f7e3639d70a8196f580e1df2fc7f3bf3491b60bfa96cd6",
+       "confirmations": 3,
+       "size": 358,
+       "height": 258,
+       "version": 4,
+       "merkleroot": "d13e4387b2a13c2611dfd947df3616292b0b387cf59eee00fec0dc12a92ef357",
+       "finalsaplingroot": "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb",
+       "chainhistoryroot": "4b4eb130c941c73d5a52c4b432c7bf0837f89dae7ceb2e2d8efb1669d399d1b2",
+       "tx": [
+        "d13e4387b2a13c2611dfd947df3616292b0b387cf59eee00fec0dc12a92ef357"
+       ],
+       "time": 1790730412,
+       "nonce": "0000976290cb0e39772354d2be92b1d177303a3c24131e51a3528fa66035002b",
+       "solution": "0249cb3e533249898a5040d8379c3e2fa1dd12d8d16b02a75dc13a226c65fcf90cd34ba8",
+       "bits": "200f0f0f",
+       "difficulty": 1,
+       "chainwork": "0000000000000000000000000000000000000000000000000000000000001133",
+       "anchor": "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7",
+       "valuePools": [
+        {
+         "id": "sprout",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        },
+        {
+         "id": "sapling",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        }
+       ],
+       "previousblockhash": "0ee13602f84cfc2cde0a40251acdbdbc9bffc9a1d7c6b7ae335e84e8856eb810",
+       "nextblockhash": "01a8a9353be88dd5c042d04d563aace9ee70977e5edc0501a8fd881f20fdc3f5"
+      },
+      {
+       "hash": "01a8a9353be88dd5c042d04d563aace9ee70977e5edc0501a8fd881f20fdc3f5",
+       "confirmations": 2,
+       "size": 358,
+       "height": 259,
+       "version": 4,
+       "merkleroot": "186ac485dd3988b665b26e34cab14b8bee5cc75223e9d3b5c8ac74f598084098",
+       "finalsaplingroot": "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb",
+       "chainhistoryroot": "36bda2542c1686eb37e2879168996d980ccd8b617c24477cf1ebf8db2c9ed868",
+       "tx": [
+        "186ac485dd3988b665b26e34cab14b8bee5cc75223e9d3b5c8ac74f598084098"
+       ],
+       "time": 1790730412,
+       "nonce": "0000144ff81204ecffe84cdec135dcef13acfc26027cbdadc3ac0d10eff20006",
+       "solution": "0212f57e20e8b4eb97325c1ad6932d22998a02858f28b0ccd92b123824d4b41bfe730b93",
+       "bits": "200f0f0f",
+       "difficulty": 1,
+       "chainwork": "0000000000000000000000000000000000000000000000000000000000001144",
+       "anchor": "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7",
+       "valuePools": [
+        {
+         "id": "sprout",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        },
+        {
+         "id": "sapling",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        }
+       ],
+       "previousblockhash": "0a9b9f0f49490fb575f7e3639d70a8196f580e1df2fc7f3bf3491b60bfa96cd6",
+       "nextblockhash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3"
+      },
+      {
+       "hash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+       "confirmations": 1,
+       "size": 358,
+       "height": 260,
+       "version": 4,
+       "merkleroot": "c83eddca3674dad893f34a3ca96af2364526b2d69e3f2b349f5bf250b84e5a50",
+       "finalsaplingroot": "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb",
+       "chainhistoryroot": "9c1417bfd4306bba27fdcc2faa61b0a9b0553d9e0bc8571ce580636b095dd901",
+       "tx": [
+        "c83eddca3674dad893f34a3ca96af2364526b2d69e3f2b349f5bf250b84e5a50"
+       ],
+       "time": 1790730412,
+       "nonce": "0000e5f2fa6190bbeebf1f717c5a893c9c814489ebe9b40a09e350d139e90029",
+       "solution": "205e22125232a4a06e51d2ecdc6534c163b7217a169c9454ca9bed3237e29cf60eea492e",
+       "bits": "200f0f0f",
+       "difficulty": 1,
+       "chainwork": "0000000000000000000000000000000000000000000000000000000000001155",
+       "anchor": "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7",
+       "valuePools": [
+        {
+         "id": "sprout",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        },
+        {
+         "id": "sapling",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        }
+       ],
+       "previousblockhash": "01a8a9353be88dd5c042d04d563aace9ee70977e5edc0501a8fd881f20fdc3f5"
+      }
+     ],
+     "chaintips": [
+      {
+       "height": 260,
+       "hash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "valid-fork"
+      }
+     ]
+    },
+    {
+     "node": "2",
+     "best": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+     "blocks": [],
+     "chaintips": [
+      {
+       "height": 260,
+       "hash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "valid-fork"
+      }
+     ]
+    },
+    {
+     "node": "3",
+     "best": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+     "blocks": [],
+     "chaintips": [
+      {
+       "height": 260,
+       "hash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "invalid"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "label": "node3 competing block",
+   "nodes": [
+    {
+     "node": "0",
+     "best": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+     "blocks": [],
+     "chaintips": [
+      {
+       "height": 260,
+       "hash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 260,
+       "hash": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+       "branchlen": 1,
+       "status": "valid-headers"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "valid-fork"
+      }
+     ]
+    },
+    {
+     "node": "2",
+     "best": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+     "blocks": [],
+     "chaintips": [
+      {
+       "height": 260,
+       "hash": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+       "branchlen": 1,
+       "status": "valid-headers"
+      },
+      {
+       "height": 260,
+       "hash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "valid-fork"
+      }
+     ]
+    },
+    {
+     "node": "3",
+     "best": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+     "blocks": [
+      {
+       "hash": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+       "confirmations": 1,
+       "size": 358,
+       "height": 260,
+       "version": 4,
+       "merkleroot": "fc2224b896edba8f5b3c5f7b3e74ab9c47f8807a57536bf919bba7aee24278cb",
+       "finalsaplingroot": "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb",
+       "chainhistoryroot": "9c1417bfd4306bba27fdcc2faa61b0a9b0553d9e0bc8571ce580636b095dd901",
+       "tx": [
+        "fc2224b896edba8f5b3c5f7b3e74ab9c47f8807a57536bf919bba7aee24278cb"
+       ],
+       "time": 1790730458,
+       "nonce": "0000fba7e1aa3658ebe25fe96a7c269b1a7d50c3fac37b7f20d280daa7f90001",
+       "solution": "15105d55f2f54f55ee21145a726315ff67d6165a90fca27a39755a2cde97cf85e53341d4",
+       "bits": "200f0f0f",
+       "difficulty": 1,
+       "chainwork": "0000000000000000000000000000000000000000000000000000000000001155",
+       "anchor": "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7",
+       "valuePools": [
+        {
+         "id": "sprout",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        },
+        {
+         "id": "sapling",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        }
+       ],
+       "previousblockhash": "01a8a9353be88dd5c042d04d563aace9ee70977e5edc0501a8fd881f20fdc3f5"
+      }
+     ],
+     "chaintips": [
+      {
+       "height": 260,
+       "hash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3",
+       "branchlen": 1,
+       "status": "invalid"
+      },
+      {
+       "height": 260,
+       "hash": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "invalid"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "label": "node0 extended the majority",
+   "nodes": [
+    {
+     "node": "0",
+     "best": "0c5ec4dc8e0b47245f75cfcce15f854b0256885d65f9daafc7f2c2d0548841a7",
+     "blocks": [
+      {
+       "hash": "0c5ec4dc8e0b47245f75cfcce15f854b0256885d65f9daafc7f2c2d0548841a7",
+       "confirmations": 1,
+       "size": 321,
+       "height": 261,
+       "version": 4,
+       "merkleroot": "8f741473950575007b8808441c375bb66efa68ec437f9e26744d4834f738de29",
+       "finalsaplingroot": "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb",
+       "chainhistoryroot": "72b110fe0c6140786ba4b0472253a297302ec1581eea809a5aa77d4a7f417ff0",
+       "tx": [
+        "8f741473950575007b8808441c375bb66efa68ec437f9e26744d4834f738de29"
+       ],
+       "time": 1790730461,
+       "nonce": "0000ed8c2e08d609b8399a2b3668e0bd3e0e1f59b74d6026e1865e6c2bbc001c",
+       "solution": "1373538bc674ab19d633424d0c298ee375f627da1bf07717a1cf152fefd4f00573824d6d",
+       "bits": "200f0f0f",
+       "difficulty": 1,
+       "chainwork": "0000000000000000000000000000000000000000000000000000000000001166",
+       "anchor": "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7",
+       "valuePools": [
+        {
+         "id": "sprout",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        },
+        {
+         "id": "sapling",
+         "monitored": true,
+         "chainValue": 0.0,
+         "chainValueZat": 0,
+         "valueDelta": 0.0,
+         "valueDeltaZat": 0
+        }
+       ],
+       "previousblockhash": "0475ebe689fc90270613278a06bf7ae76381709aba4f05ff5409efd098239ee3"
+      }
+     ],
+     "chaintips": [
+      {
+       "height": 261,
+       "hash": "0c5ec4dc8e0b47245f75cfcce15f854b0256885d65f9daafc7f2c2d0548841a7",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 260,
+       "hash": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+       "branchlen": 1,
+       "status": "valid-headers"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "valid-fork"
+      }
+     ]
+    },
+    {
+     "node": "2",
+     "best": "0c5ec4dc8e0b47245f75cfcce15f854b0256885d65f9daafc7f2c2d0548841a7",
+     "blocks": [],
+     "chaintips": [
+      {
+       "height": 261,
+       "hash": "0c5ec4dc8e0b47245f75cfcce15f854b0256885d65f9daafc7f2c2d0548841a7",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 260,
+       "hash": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+       "branchlen": 1,
+       "status": "valid-headers"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "valid-fork"
+      }
+     ]
+    },
+    {
+     "node": "3",
+     "best": "0c5ec4dc8e0b47245f75cfcce15f854b0256885d65f9daafc7f2c2d0548841a7",
+     "blocks": [],
+     "chaintips": [
+      {
+       "height": 261,
+       "hash": "0c5ec4dc8e0b47245f75cfcce15f854b0256885d65f9daafc7f2c2d0548841a7",
+       "branchlen": 0,
+       "status": "active"
+      },
+      {
+       "height": 260,
+       "hash": "0a68e73f6285874da9b138de6f4ad423fe37be3ec99e4044f754e8d6ee8406fa",
+       "branchlen": 1,
+       "status": "valid-fork"
+      },
+      {
+       "height": 259,
+       "hash": "0811dc04b20cceb78a420291b5b660694aa52eda9cc2fbfea09156a6e1bc04f4",
+       "branchlen": 2,
+       "status": "invalid"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
