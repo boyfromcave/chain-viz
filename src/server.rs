@@ -163,13 +163,15 @@ async fn yellowback(State(s): State<Arc<AppState>>) -> Json<Value> {
     let m = s.model.read().await;
     let chain = m.chain.snapshot(SNAPSHOT_BLOCKS);
     let blocks: Vec<Value> = chain.main.iter().map(|b| json!({"hash": b.hash, "height": b.height, "time": b.time, "txCount": b.tx_count, "yb": b.yb})).collect();
-    Json(json!({
+    let v = json!({
         "seq": s.bus.last_seq(),
         "tip": chain.majority.as_ref().map(|h| json!({"height": h.height, "hash": h.hash})),
         "yedInfo": m.yed_info,
         "yellowback": m.yellowback.snapshot(m.leader(), &m.healthy()),
         "blocks": blocks,
-    }))
+    });
+    drop(m);
+    s.finish(v)
 }
 
 #[derive(Deserialize, Default)]
@@ -195,7 +197,8 @@ async fn revenue(State(s): State<Arc<AppState>>, Query(q): Query<RevenueQuery>) 
         o.insert("enforcing".into(), json!(m.yed_info.values().map(|i| i.enforcing).collect::<Vec<_>>()));
         o.insert("pMintNow".into(), m.yellowback.stats.get(m.leader().as_deref().unwrap_or("")).map(|st| st.p_mint).into());
     }
-    Json(v)
+    drop(m);
+    s.finish(v)
 }
 
 #[derive(Deserialize)]
