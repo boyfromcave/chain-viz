@@ -1097,6 +1097,150 @@
     "bundleSource": "",
     "seq": 3
    }
+  },
+  {
+   "txid": "eeab2d2abc538ad021ce8fdc70d29befa37a2e2190f99c762eda8e3480977740",
+   "kind": "redeem/owner",
+   "height": 315,
+   "hex": "0400008085202f89021a006318ebd22d0d258d0b6dd0789b5668b28888ff83039f2f379f4e7584a313000000007c4830450221009f589b5d7a87970d3af90ed1827f7c90df9a0df063a87fa90a7d40428de92e3c02202d90f160d374d49a5cca0b1f7592beb86b6fcbc41e5751d8f17653c4c2b74f1d01513163023701b1752103433e034b1e09b0db341dd18e343d3d13c764a3e1c271cd39caf7b2662f1a7966ac67024f01b1755168feffffff1a006318ebd22d0d258d0b6dd0789b5668b28888ff83039f2f379f4e7584a313010000006a473044022041fa46ad0104a65f951f27ae007c16f636d984cf8f7d3678c34c31e3e411a1d2022028747a474b09f20b307d34757c45bb8b9c6e8be1c292f31687a0980e911b72ed012103433e034b1e09b0db341dd18e343d3d13c764a3e1c271cd39caf7b2662f1a7966ffffffff03a8fc9f38000000001976a91440630ab9655f2adbdd8adb548ec9d880a62d295a88ac80f0fa02000000001976a91409f9f507c18a1177fabaef17642f354f3ea66d2e88ac00000000000000000d6a0b594203033a01000001ff0037010000620100000000000000000000000000",
+   "vout": [
+    {
+     "n": 0,
+     "value": 9.50009,
+     "scriptPubKey": {
+      "hex": "76a91440630ab9655f2adbdd8adb548ec9d880a62d295a88ac",
+      "type": "pubkeyhash"
+     }
+    },
+    {
+     "n": 1,
+     "value": 0.5,
+     "scriptPubKey": {
+      "hex": "76a91409f9f507c18a1177fabaef17642f354f3ea66d2e88ac",
+      "type": "pubkeyhash"
+     }
+    },
+    {
+     "n": 2,
+     "value": 0.0,
+     "scriptPubKey": {
+      "hex": "6a0b594203033a01000001ff00",
+      "type": "nulldata"
+     }
+    }
+   ],
+   "gettxinfo": {
+    "txid": "eeab2d2abc538ad021ce8fdc70d29befa37a2e2190f99c762eda8e3480977740",
+    "height": 315,
+    "type": "redeem",
+    "path": "owner",
+    "verdict": "ok",
+    "yedIn": 10000,
+    "yedOut": 0,
+    "burned": 10000,
+    "feeZat": 50000000,
+    "payee": "smDxF4b6h9ZMwP2ZcPBzHQcuxU6WYSvdSSn",
+    "assigned": [],
+    "spentTokens": [
+     {
+      "txid": "13a384754e9f372f9f0383ff8888b268569b78d06d0b8d250d2dd2eb1863001a",
+      "vout": 1
+     }
+    ],
+    "closedVaults": [
+     {
+      "txid": "13a384754e9f372f9f0383ff8888b268569b78d06d0b8d250d2dd2eb1863001a",
+      "vout": 0
+     }
+    ],
+    "expired": false,
+    "xMint": 17623811,
+    "xClaim": 18379743,
+    "aMint": null,
+    "aClaim": null,
+    "pMint": 17623811,
+    "pClaim": 18379743,
+    "bundleSeqs": [],
+    "attestFeeZat": 0,
+    "attestPayee": null,
+    "residualZat": 0,
+    "claimPath": "",
+    "notice": false,
+    "carrierVin": -1,
+    "bundleSource": ""
+   }
+  },
+  {
+   "txid": "a1b2438fa5632fcb60ede894410011531a01f6b46d6fa92c7e42968a58ab41d0",
+   "kind": "redeem/owner",
+   "height": 315,
+   "hex": "0400008085202f8902adb776027920801f55e529b34302a03a8061b488a2fdc751ef3e7c042c350a59000000007c483045022100a6cdebf173b9c70f3ef100519ed19f548386d934b5967539185a6179750a23fb02200cadf711549984afe7dc86f464dd891d96fb95571ea0e46e5e945039282c9ba101513163023201b1752103389bbdc417be756cf0754f018f3506f75d16a1e310371d07d24cc84b138a674aac67024a01b1755168feffffffadb776027920801f55e529b34302a03a8061b488a2fdc751ef3e7c042c350a59010000006a473044022066602c1c59b6cc93cceaa9b93728aecee0bf884a2396eba4482b1815c67f15c602205f087d9944513b2ac082a141cf2c6ab2753d348fa01938b5f6dfb1535f3374bc012103389bbdc417be756cf0754f018f3506f75d16a1e310371d07d24cc84b138a674affffffff03c0e0a338000000001976a914e4bd6c44a3c1e3ca6c698bb630ad71e9b37f42d488ac80f0fa02000000001976a9143adc5831726e1b524b0549a1cea8922e01610c7388ac00000000000000000d6a0b594203033a01000001ff0032010000620100000000000000000000000000",
+   "vout": [
+    {
+     "n": 0,
+     "value": 9.50264,
+     "scriptPubKey": {
+      "hex": "76a914e4bd6c44a3c1e3ca6c698bb630ad71e9b37f42d488ac",
+      "type": "pubkeyhash"
+     }
+    },
+    {
+     "n": 1,
+     "value": 0.5,
+     "scriptPubKey": {
+      "hex": "76a9143adc5831726e1b524b0549a1cea8922e01610c7388ac",
+      "type": "pubkeyhash"
+     }
+    },
+    {
+     "n": 2,
+     "value": 0.0,
+     "scriptPubKey": {
+      "hex": "6a0b594203033a01000001ff00",
+      "type": "nulldata"
+     }
+    }
+   ],
+   "gettxinfo": {
+    "txid": "a1b2438fa5632fcb60ede894410011531a01f6b46d6fa92c7e42968a58ab41d0",
+    "height": 315,
+    "type": "redeem",
+    "path": "owner",
+    "verdict": "ok",
+    "yedIn": 10000,
+    "yedOut": 0,
+    "burned": 10000,
+    "feeZat": 50000000,
+    "payee": "smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4",
+    "assigned": [],
+    "spentTokens": [
+     {
+      "txid": "590a352c047c3eef51c7fda288b461803aa00243b329e5551f8020790276b7ad",
+      "vout": 1
+     }
+    ],
+    "closedVaults": [
+     {
+      "txid": "590a352c047c3eef51c7fda288b461803aa00243b329e5551f8020790276b7ad",
+      "vout": 0
+     }
+    ],
+    "expired": false,
+    "xMint": 17623811,
+    "xClaim": 18379743,
+    "aMint": null,
+    "aClaim": null,
+    "pMint": 17623811,
+    "pClaim": 18379743,
+    "bundleSeqs": [],
+    "attestFeeZat": 0,
+    "attestPayee": null,
+    "residualZat": 0,
+    "claimPath": "",
+    "notice": false,
+    "carrierVin": -1,
+    "bundleSource": ""
+   }
   }
  ]
 }
