@@ -117,8 +117,10 @@ impl Model {
 
     /// `pMint` at `height` from the timeline (`yed_gethistory` / live `yed_getstats` rows), the
     /// price every USD figure of the revenue view uses (C-9).
+    /// The row at `height`, else the latest row below it (a block's coinbase rows are ledgered
+    /// before that height's `yed_getstats` row lands; `yed_gethistory` fills the exact one later).
     pub fn p_mint_at(&self, height: u64) -> Option<i64> {
-        self.yellowback.history.get(&height).and_then(|r| r.get("pMint")).and_then(Value::as_i64).filter(|p| *p > 0)
+        self.yellowback.history.range(..=height).rev().find_map(|(_, r)| r.get("pMint").and_then(Value::as_i64).filter(|p| *p > 0))
     }
 
     /// Fill the `usd` of `revenue` events from the price known now.
