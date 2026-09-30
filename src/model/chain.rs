@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::events::{BlockEvent, EventKind};
+use crate::model::yellowback::BlockYb;
 use crate::rpc::{Block, ChainTip};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -46,6 +47,9 @@ pub struct BlockInfo {
     /// Present only for blocks the collector fetched in full (not side tips).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub txids: Vec<String>,
+    /// The Yellowback view (C3): tag, miner, rejected, its Yellowback transactions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yb: Option<BlockYb>,
 }
 
 impl BlockInfo {
@@ -62,6 +66,7 @@ impl BlockInfo {
             nodes: BTreeSet::new(),
             seen,
             txids: b.tx.clone(),
+            yb: None,
         }
     }
     pub fn event(&self) -> BlockEvent {
@@ -141,6 +146,9 @@ impl ChainModel {
     }
     pub fn block(&self, hash: &str) -> Option<&BlockInfo> {
         self.blocks.get(hash)
+    }
+    pub fn block_mut(&mut self, hash: &str) -> Option<&mut BlockInfo> {
+        self.blocks.get_mut(hash)
     }
     pub fn head(&self, node: &str) -> Option<&Head> {
         self.heads.get(node)
@@ -230,6 +238,7 @@ impl ChainModel {
                 nodes: BTreeSet::new(),
                 seen,
                 txids: Vec::new(),
+                yb: None,
             };
             let ev = info.event();
             self.blocks.insert(t.hash.clone(), info);

@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::events::EventKind;
 use crate::model::chain::Emitted;
+use crate::model::yellowback::YbTx;
 use crate::rpc::MempoolEntry;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -24,6 +25,9 @@ pub struct MempoolTx {
     pub present: BTreeSet<String>,
     #[serde(default)]
     pub depends: Vec<String>,
+    /// Set once the collector classified it (C3); absent on an ordinary tx.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yb: Option<YbTx>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,6 +51,16 @@ impl MempoolModel {
     pub fn get(&self, txid: &str) -> Option<&MempoolTx> {
         self.txs.get(txid)
     }
+    /// Attach the Yellowback classification; `false` if the tx has left the mempool meanwhile.
+    pub fn set_yb(&mut self, txid: &str, yb: YbTx) -> bool {
+        match self.txs.get_mut(txid) {
+            Some(t) => {
+                t.yb = Some(yb);
+                true
+            }
+            None => false,
+        }
+    }
     pub fn len(&self) -> usize {
         self.txs.len()
     }
@@ -68,7 +82,7 @@ impl MempoolModel {
                     }
                 }
                 None => {
-                    let mut tx = MempoolTx { txid: txid.clone(), size: e.size, fee: e.fee, time: e.time, first_seen: BTreeMap::new(), present: BTreeSet::new(), depends: e.depends.clone() };
+                    let mut tx = MempoolTx { txid: txid.clone(), size: e.size, fee: e.fee, time: e.time, first_seen: BTreeMap::new(), present: BTreeSet::new(), depends: e.depends.clone(), yb: None };
                     tx.first_seen.insert(node.to_string(), now);
                     tx.present.insert(node.to_string());
                     self.txs.insert(txid.clone(), tx);

@@ -263,6 +263,47 @@ impl RpcClient {
     pub async fn yed_getblockverdict(&self, hash: &str) -> Result<YedBlockVerdict, RpcError> {
         self.typed("yed_getblockverdict", json!([hash])).await
     }
+    // ---- C3: the Yellowback health model's reads (plan §4.1); shapes stay `Value` where the
+    // UI only relays them. Field names: doc/yellowback-rpc-contract.json rpcversion 3.
+    pub async fn yed_getprice(&self, height: Option<u64>) -> Result<Value, RpcError> {
+        self.call("yed_getprice", height.map(|h| json!([h])).unwrap_or(json!([]))).await
+    }
+    pub async fn yed_getactivation(&self) -> Result<Value, RpcError> {
+        self.call("yed_getactivation", json!([])).await
+    }
+    pub async fn yed_listminers(&self) -> Result<Vec<Value>, RpcError> {
+        self.typed("yed_listminers", json!([])).await
+    }
+    /// `yed_listvaults [status] [count] [skip]`; `status` empty = every status.
+    pub async fn yed_listvaults(&self, status: &str, count: u64, skip: u64) -> Result<Vec<Value>, RpcError> {
+        self.typed("yed_listvaults", json!([status, count, skip])).await
+    }
+    pub async fn yed_listclaimable(&self) -> Result<Vec<Value>, RpcError> {
+        self.typed("yed_listclaimable", json!([])).await
+    }
+    pub async fn yed_listattestors(&self) -> Result<Vec<Value>, RpcError> {
+        self.typed("yed_listattestors", json!([])).await
+    }
+    pub async fn yed_getstatehash(&self) -> Result<YedStateHash, RpcError> {
+        self.typed("yed_getstatehash", json!([])).await
+    }
+    /// `yed_gethistory from to`: at most 2016 rows per call.
+    pub async fn yed_gethistory(&self, from: u64, to: u64) -> Result<Vec<Value>, RpcError> {
+        self.typed("yed_gethistory", json!([from, to])).await
+    }
+    /// `yed_gettag <height|blockhash>`.
+    pub async fn yed_gettag(&self, block: &str) -> Result<Value, RpcError> {
+        self.call("yed_gettag", json!([block])).await
+    }
+    pub async fn yed_gettxinfo(&self, txid: &str) -> Result<Value, RpcError> {
+        self.call("yed_gettxinfo", json!([txid])).await
+    }
+    pub async fn yed_decodepayload(&self, hex: &str) -> Result<Value, RpcError> {
+        self.call("yed_decodepayload", json!([hex])).await
+    }
+    pub async fn yed_validaterawtransaction(&self, hex: &str) -> Result<Value, RpcError> {
+        self.call("yed_validaterawtransaction", json!([hex])).await
+    }
 }
 
 // ---- stock RPC shapes (Ycash 4.5: src/rpc/blockchain.cpp, mining.cpp) ----
@@ -503,6 +544,13 @@ pub struct YedBlockVerdict {
     pub transactions: Vec<Value>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct YedStateHash {
+    pub height: u64,
+    pub blockhash: String,
+    pub statehash: String,
 }
 
 /// Per-node counters as `/api/health` reports them.
