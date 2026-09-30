@@ -186,10 +186,7 @@ impl RpcClient {
         let text = resp.text().await.map_err(|e| RpcError::Transport(e.to_string()))?;
         let v: Value = serde_json::from_str(&text).map_err(|e| RpcError::Protocol(format!("HTTP {}: {} ({})", status, e, text.chars().take(120).collect::<String>())))?;
         if let Some(err) = v.get("error").filter(|e| !e.is_null()) {
-            return Err(RpcError::Node {
-                code: err.get("code").and_then(Value::as_i64).unwrap_or(0),
-                message: err.get("message").and_then(Value::as_str).unwrap_or("").to_string(),
-            });
+            return Err(RpcError::Node { code: err.get("code").and_then(Value::as_i64).unwrap_or(0), message: err.get("message").and_then(Value::as_str).unwrap_or("").to_string() });
         }
         v.get("result").cloned().ok_or_else(|| RpcError::Protocol("no result".into()))
     }

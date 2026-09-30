@@ -98,16 +98,31 @@ impl MempoolModel {
         out
     }
 
+    /// Replay: a recorded `mempool_add` (the first node to hold it; later nodes are not recorded).
+    pub fn apply_add(&mut self, node: &str, txid: &str, e: &MempoolEntry, now: f64) {
+        self.reported.insert(node.to_string());
+        let tx = self.txs.entry(txid.to_string()).or_insert_with(|| MempoolTx {
+            txid: txid.to_string(),
+            size: e.size,
+            fee: e.fee,
+            time: e.time,
+            first_seen: BTreeMap::new(),
+            present: BTreeSet::new(),
+            depends: e.depends.clone(),
+        });
+        tx.first_seen.entry(node.to_string()).or_insert(now);
+        tx.present.insert(node.to_string());
+    }
+
+    /// Replay: a recorded `mempool_remove`.
+    pub fn apply_remove(&mut self, txid: &str) {
+        self.txs.remove(txid);
+    }
+
     pub fn snapshot(&self) -> MempoolSnapshot {
         let mut txs: Vec<MempoolTx> = self.txs.values().cloned().collect();
         txs.sort_by(|a, b| a.time.cmp(&b.time).then_with(|| a.txid.cmp(&b.txid)));
-        MempoolSnapshot {
-            count: txs.len(),
-            bytes: txs.iter().map(|t| t.size).sum(),
-            fee_total: txs.iter().map(|t| t.fee).sum(),
-            nodes: self.reported.len(),
-            txs,
-        }
+        MempoolSnapshot { count: txs.len(), bytes: txs.iter().map(|t| t.size).sum(), fee_total: txs.iter().map(|t| t.fee).sum(), nodes: self.reported.len(), txs }
     }
 }
 
