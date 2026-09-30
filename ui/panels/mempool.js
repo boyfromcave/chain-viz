@@ -1,7 +1,7 @@
 // Mempool panel (plan §3.2.2): bubbles by fee rate × time in mempool (radius ~ size), grey unless the
 // entry carries `yb.type` (C3), tiles for count/bytes/fees/median age, a >2-block flag, and a dashed
 // red ring for a tx present on some nodes but not all.
-import { h, svg, clear, fmtInt, fmtBytes, fmtSecs, fmtYec, median, tooltip, YB_TYPE_SLOT, slotVar } from '../lib.js';
+import { h, svg, clear, fmtInt, fmtBytes, fmtSecs, fmtYec, median, tooltip, YB_TYPE_SLOT, ybSlotKey, slotVar } from '../lib.js';
 import { spacing } from './header.js';
 
 const $ = (id) => document.getElementById(id);
@@ -9,7 +9,7 @@ const M = { l: 44, r: 12, t: 10, b: 26 };
 
 const age = (t, now) => now - Math.min(t.time || now, ...Object.values(t.firstSeen || {}).concat([Infinity]));
 const feeRate = (t) => (t.size ? (t.fee * 1e8) / t.size : 0);   // zat per byte (fee is in YEC)
-const colour = (t) => (t.yb?.type ? slotVar(YB_TYPE_SLOT[t.yb.type] || 's6') : 'var(--mark)');
+const colour = (t) => (t.yb?.type ? slotVar(YB_TYPE_SLOT[ybSlotKey(t.yb)] || 's6') : 'var(--mark)');
 
 export function render({ store, now }) {
   const s = store.snap; if (!s) return;
@@ -51,7 +51,7 @@ export function render({ store, now }) {
   }
   const legend = clear($('mempool-legend'));
   legend.append(h('span', {}, h('i', { style: 'background:var(--mark)' }), 'ordinary tx'));
-  for (const type of [...new Set(txs.map((v) => v.t.yb?.type).filter(Boolean))]) legend.append(h('span', {}, h('i', { style: `background:${slotVar(YB_TYPE_SLOT[type] || 's6')}` }), type));
+  for (const type of [...new Set(txs.map((v) => ybSlotKey(v.t.yb)).filter(Boolean))]) legend.append(h('span', {}, h('i', { style: `background:${slotVar(YB_TYPE_SLOT[type] || 's6')}` }), type));
   legend.append(h('span', {}, h('i', { class: 'ring' }), 'not on every node'), h('span', {}, 'size ~ area'));
   const table = clear($('mempool-table'));
   table.append(h('tr', {}, ...['txid', 'type', 'size', 'fee', 'zat/B', 'age', 'nodes'].map((c) => h('th', {}, c))));

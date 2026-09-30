@@ -50,10 +50,13 @@ export function median(xs) {
 }
 
 // Yellowback tx types → categorical slots (fixed order, never cycled; unknown types fold to "other").
+// Keys are the node's own type names (yed_gettxinfo / classify.rs, lowercase); a CLAIM is
+// `redeem` with path "claim", so callers pass ybSlotKey(yb) rather than the bare type (C-F10).
 export const YB_TYPE_SLOT = {
-  MINT: 's1', SEND: 's3', REDEEM: 's2', CLAIM: 's7', SWEEP: 's5', VOID: 's8',
-  ATTESTOR_REGISTER: 's4', ATTESTATION: 's4', NOTICE: 's6',
+  mint: 's1', transfer: 's3', redeem: 's2', claim: 's7', sweep: 's5', void: 's8',
+  register: 's4', equivocation: 's4', revive: 's4', notice: 's6',
 };
+export const ybSlotKey = (yb) => (yb?.type === 'redeem' && yb?.path === 'claim' ? 'claim' : yb?.type);
 export const slotVar = (slot) => `var(--${slot})`;
 
 // One shared tooltip. show(html-free text, x, y).
