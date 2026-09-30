@@ -150,6 +150,14 @@ impl ChainModel {
     pub fn block_mut(&mut self, hash: &str) -> Option<&mut BlockInfo> {
         self.blocks.get_mut(hash)
     }
+    /// Fully fetched blocks whose Yellowback view is still unenriched (`yb.tagged == false`),
+    /// newest first, at most `limit` (C3's catch-up when a stock node walked the backfill).
+    pub fn untagged(&self, limit: usize) -> Vec<(String, u64)> {
+        let mut v: Vec<(String, u64)> = self.blocks.values().filter(|b| b.yb.as_ref().map(|y| !y.tagged).unwrap_or(false)).map(|b| (b.hash.clone(), b.height)).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        v.truncate(limit);
+        v
+    }
     pub fn head(&self, node: &str) -> Option<&Head> {
         self.heads.get(node)
     }

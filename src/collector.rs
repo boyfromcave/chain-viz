@@ -30,6 +30,8 @@ use crate::source::{Source, Wake};
 pub const BACKFILL: u64 = 20;
 /// `getchaintips` is refreshed on every head move and every this many polls otherwise.
 pub const TIPS_EVERY: u64 = 10;
+/// Unenriched blocks a `yed_*` node catches up on per poll.
+pub const ENRICH_PER_POLL: usize = 8;
 
 /// What the snapshot says about one node (never its URL or credentials).
 #[derive(Debug, Clone, Serialize)]
@@ -191,6 +193,15 @@ impl Collector {
             }
             st.chain_name = Some(info.chain);
         }
+        if st.yed_enabled.is_none() {
+            // Know before the first block walk whether this node can enrich (yed_gettag,
+            // yed_gettxinfo): one extra yed_getinfo, once per node.
+            match client.yed_getinfo().await {
+                Ok(_) => st.yed_enabled = Some(true),
+                Err(e) if e.is_method_not_found() => st.yed_enabled = Some(false),
+                Err(e) => return Err(e),
+            }
+        }
         if want_head {
             let best = client.get_best_block_hash().await?;
             st.ticks += 1;
@@ -233,6 +244,9 @@ impl Collector {
                     self.on_block_yed(client, st, &best).await?;
                 }
             }
+            if st.yed_enabled == Some(true) {
+                self.enrich_pending(client).await?;
+            }
             if st.yed_enabled != Some(false) {
                 match client.yed_getinfo().await {
                     Ok(info) => {
@@ -261,11 +275,10 @@ impl Collector {
         Ok(())
     }
 
-    /// The Yellowback transactions of one fetched block: payload scan (no RPC), then on a node
-    /// with `yed_*`, `yed_gettag` once per block hash and `yed_gettxinfo` once per txid.
+    /// The Yellowback transactions of one fetched block: payload scan (no RPC), then
+    /// `enrich_block` on a node with `yed_*`.
     async fn classify_block(&self, client: &RpcClient, st: &NodeState, b: &BlockFull) -> Result<(), RpcError> {
-        let node = client.id().to_string();
-        let (needs_tag, pending): (bool, Vec<YbTx>) = {
+        {
             let mut m = self.model.write().await;
             let Model { chain, yellowback, .. } = &mut *m;
             let Some(info) = chain.block_mut(&b.hash) else { return Ok(()) };
@@ -276,26 +289,42 @@ impl Collector {
                 }
                 info.yb = Some(BlockYb { txs, ..Default::default() });
             }
-            let yb = info.yb.as_ref().expect("set above");
+        }
+        if st.yed_enabled == Some(true) {
+            self.enrich_block(client, &b.hash, b.height).await?;
+        }
+        Ok(())
+    }
+
+    /// On a node with `yed_*`: `yed_gettag` once per block hash and `yed_gettxinfo` once per
+    /// Yellowback txid the block holds (cached by txid: a tx enriched in the mempool is asked
+    /// again once, for its confirmed row).
+    async fn enrich_block(&self, client: &RpcClient, hash: &str, height: u64) -> Result<(), RpcError> {
+        let node = client.id().to_string();
+        let (needs_tag, pending): (bool, Vec<YbTx>) = {
+            let m = self.model.read().await;
+            let Some(yb) = m.chain.block(hash).and_then(|b| b.yb.as_ref()) else { return Ok(()) };
             (!yb.tagged, yb.txs.iter().filter(|t| t.height.is_none() || t.info.is_none()).cloned().collect())
         };
-        if st.yed_enabled != Some(true) || (!needs_tag && pending.is_empty()) {
+        if !needs_tag && pending.is_empty() {
             return Ok(());
         }
-        let tag = if needs_tag { Some(client.yed_gettag(&b.hash).await?) } else { None };
+        let tag = if needs_tag { Some(client.yed_gettag(hash).await?) } else { None };
         let mut done = Vec::new();
         for mut t in pending {
             match client.yed_gettxinfo(&t.txid).await {
                 Ok(info) => {
-                    t.apply(&info, Some(b.height));
+                    t.apply(&info, Some(height));
                     done.push(t);
                 }
                 Err(e) if matches!(e, RpcError::Node { .. }) => {
                     // The index has no row (a non-Yellowback tx by the node's rules, or a
                     // height the index has not applied yet): keep the payload-only view.
                     debug!(node = %node, "yed_gettxinfo {}: {}", short(&t.txid), e);
-                    t.height = Some(b.height);
-                    t.verdict = if t.verdict.is_empty() { "unindexed".into() } else { t.verdict };
+                    t.height = Some(height);
+                    if t.verdict.is_empty() {
+                        t.verdict = "unindexed".into();
+                    }
                     done.push(t);
                 }
                 Err(e) => return Err(e),
@@ -305,7 +334,7 @@ impl Collector {
         {
             let mut m = self.model.write().await;
             let Model { chain, yellowback, .. } = &mut *m;
-            if let Some(info) = chain.block_mut(&b.hash).and_then(|i| i.yb.as_mut()) {
+            if let Some(info) = chain.block_mut(hash).and_then(|i| i.yb.as_mut()) {
                 if let Some(tag) = tag {
                     info.miner = tag.get("payoutAddress").and_then(Value::as_str).map(str::to_string).filter(|_| tag.get("found").and_then(Value::as_bool).unwrap_or(false));
                     info.tag = Some(tag);
@@ -315,12 +344,22 @@ impl Collector {
                     if let Some(slot) = info.txs.iter_mut().find(|x| x.txid == t.txid) {
                         *slot = t.clone();
                     }
-                    emitted.push(Emitted { height: Some(b.height), node: Some(node.clone()), kind: t.event() });
+                    emitted.push(Emitted { height: Some(height), node: Some(node.clone()), kind: t.event() });
                     yellowback.upsert_tx(t);
                 }
             }
         }
         self.bus.publish_all(emitted);
+        Ok(())
+    }
+
+    /// Blocks a stock node fetched (the backfill, or a block it saw first) that no `yed_*`
+    /// node has enriched yet: a few per poll.
+    async fn enrich_pending(&self, client: &RpcClient) -> Result<(), RpcError> {
+        let pending = self.model.read().await.chain.untagged(ENRICH_PER_POLL);
+        for (hash, height) in pending {
+            self.enrich_block(client, &hash, height).await?;
+        }
         Ok(())
     }
 
@@ -406,8 +445,10 @@ impl Collector {
         let node = client.id().to_string();
         let leader = {
             let m = self.model.read().await;
-            let l = m.leader();
-            l.is_none() || l.as_deref() == Some(&node)
+            // The lowest-id yed_* node that is up; this node counts even before its first
+            // step marked it up.
+            let me = node.parse::<u64>().unwrap_or(u64::MAX);
+            m.leader().map(|l| l.parse::<u64>().unwrap_or(u64::MAX) >= me).unwrap_or(true)
         };
         let stats = client.yed_getstats().await?;
         let mut emitted = Vec::new();
