@@ -18,11 +18,16 @@ fn fixture() -> Value {
 /// Feed the fixture into a fresh model the way the collector does; returns the model and the
 /// number of Yellowback txs attributed.
 fn build(f: &Value, enforcing: bool) -> (RevenueModel, usize) {
+    build_with(f, enforcing, |s| s.clone())
+}
+
+/// As `build`, with each recorded `getblocksubsidy` answer reshaped first.
+fn build_with(f: &Value, enforcing: bool, reshape: impl Fn(&Value) -> Value) -> (RevenueModel, usize) {
     let mut m = RevenueModel::new(5000);
     let mut n = 0;
     for entry in f["blocks"].as_array().unwrap() {
         let b: BlockFull = serde_json::from_value(entry["block"].clone()).unwrap();
-        let s: BlockSubsidy = serde_json::from_value(entry["subsidy"].clone()).unwrap();
+        let s: BlockSubsidy = serde_json::from_value(reshape(&entry["subsidy"])).unwrap();
         m.set_subsidy(b.height, &s);
         let yb: Vec<(String, YbTx)> = b.tx.iter().filter_map(|t| find_payload(t).map(|p| (t.txid.clone(), YbTx::from_payload(&t.txid, p)))).collect();
         let ids: Vec<String> = yb.iter().map(|(id, _)| id.clone()).collect();
@@ -45,8 +50,25 @@ fn build(f: &Value, enforcing: bool) -> (RevenueModel, usize) {
 #[test]
 fn ledger_sums_equal_the_nodes() {
     let f = fixture();
+    check_sums(&f, build(&f, true));
+}
+
+/// ycashd 6.20.0's `getblocksubsidy` answers only `{miner, founders, totalblocksubsidy}` (no
+/// `foundersaddress`, no `fundingstreams`; `ref/ycash6/src/rpc/mining.cpp` getblocksubsidy).
+/// The fixture was recorded on v4.5.0, so replay it reshaped: the fund's share must still be
+/// attributed (by value) and every sum must hold unchanged.
+#[test]
+fn ledger_sums_equal_the_nodes_on_6_20_0_subsidy_shape() {
+    let f = fixture();
+    let reshape = |s: &Value| {
+        let (m, fo) = (s["miner"].as_f64().unwrap(), s["founders"].as_f64().unwrap());
+        serde_json::json!({"miner": m, "founders": fo, "totalblocksubsidy": m + fo})
+    };
+    check_sums(&f, build_with(&f, true, reshape));
+}
+
+fn check_sums(f: &Value, (m, n): (RevenueModel, usize)) {
     let (from, to) = (f["from"].as_u64().unwrap(), f["to"].as_u64().unwrap());
-    let (m, n) = build(&f, true);
     let e = &f["expected"];
     assert_eq!(n as u64, e["ybTxs"].as_u64().unwrap(), "Yellowback txs found");
     let q = m.query(from, to, "block", &|_| None, &[], &[]);
@@ -59,7 +81,7 @@ fn ledger_sums_equal_the_nodes() {
     let coinbase = t["subsidy"]["zat"].as_i64().unwrap() + t["netfee"]["zat"].as_i64().unwrap() + t["subsidyOther"]["zat"].as_i64().unwrap();
     assert_eq!(coinbase, e["coinbaseZat"].as_i64().unwrap(), "coinbase rows add up to the coinbase outputs");
     assert_eq!(t["subsidy"]["zat"], e["minerSubsidyZat"], "the miner claimed the whole subsidy");
-    assert_eq!(t["subsidyOther"]["zat"], e["otherSubsidyZat"], "the fund's share is attributed by its address");
+    assert_eq!(t["subsidyOther"]["zat"], e["otherSubsidyZat"], "the fund's share is attributed (by its address, or by value on 6.20.0)");
     assert_eq!(t["collateralRelease"]["zat"], 0, "enforcement on: no release rows");
     // every row's payee is an address the node spelled (fee rows) or a coinbase address
     for r in q["rows"].as_array().unwrap() {

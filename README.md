@@ -70,9 +70,14 @@ With the heartbeat running the majority stays ahead, so it is node 4 that reorgs
 *others* reorg instead, `D heartbeat stop`, `generate 5` on node 4, then `D heartbeat start`: one
 `reorg` row per node appears as they move onto node 4's longer branch.
 
-Never invalidate more than 99 blocks deep: a stock Ycash wallet node aborts on a reorg longer
-than its witness cache (`WITNESS_CACHE_SIZE` = 100; plan finding C-F33), and on macOS the process
-then hangs beyond `kill -9` until `down`/reboot.
+Never invalidate more than 99 blocks deep (plan finding C-F33). Both node versions refuse a reorg
+longer than `MAX_REORG_LENGTH` = 99 with a shutdown (v4.5.0 `src/main.cpp:3772`, 6.20.0
+`src/main.cpp:4673-4688`), and a wallet node's witness cache holds `WITNESS_CACHE_SIZE` =
+`MAX_REORG_LENGTH + 1` = 100 entries at both (v4.5.0 `src/wallet/wallet.h:282`, 6.20.0
+`src/wallet/wallet.h:89`, `src/main.h:66`). On v4.5.0 the 101st disconnect asserts in every wallet
+(`src/wallet/wallet.cpp:1737`); on 6.20.0 only in a wallet that has seen Sprout or Sapling notes
+(`src/wallet/wallet.cpp:3596`). On macOS an aborted node then hangs beyond `kill -9` until
+`down`/reboot.
 
 ## Run against your own node
 
@@ -230,7 +235,9 @@ every Yellowback transaction in a block. It is **attributed, not estimated**:
   fee per tag and per block, beside the stock coinbase — the marginal revenue of quoting.
 * **Stock coinbase.** `subsidy` and `netfee` are the miner's coinbase outputs (net fees =
   coinbase value − `getblocksubsidy.miner`); `subsidy_other` is what the coinbase pays to
-  someone else (regtest's founders output). A pool's coinbase address is aliased to the
+  someone else (regtest's founders output), matched by `getblocksubsidy.foundersaddress` on
+  v4.5.0 and, since ycashd 6.20.0 no longer reports it, by the output equal to `founders`
+  (a tie goes to the fund address last attributed). A pool's coinbase address is aliased to the
   `payoutKey` of the tag on the same block, so its blocks roll up under its quoting key;
   a block without a tag stays under its coinbase address.
 * **Attestor fees** (`attestfee`, 25 % of the enforcement fee once ARMED) go to the bond key

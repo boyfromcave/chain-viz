@@ -154,6 +154,10 @@ pub struct RevenueModel {
     evicted: u64,
     prefix: Option<[u8; 2]>,
     keep: u64,
+    /// The fund's address as last attributed. 6.20.0's `getblocksubsidy` no longer names it
+    /// (only `miner founders totalblocksubsidy`), so it is learned from a coinbase where exactly
+    /// one output equals the fund's share, and breaks a tie when several do.
+    fund_addr: Option<String>,
 }
 
 fn zat_of(v: f64) -> i64 {
@@ -265,10 +269,22 @@ impl RevenueModel {
                     mine.push((o.n, zat, addr));
                 }
             }
-            if founders_addr.is_none() && other_subsidy > 0 {
-                // No address to match: the output equal to the other share is the fund's.
-                if let Some(i) = mine.iter().position(|(_, z, _)| *z == other_subsidy) {
+            if founders_addr.is_some() {
+                self.fund_addr = founders_addr.clone();
+            } else if other_subsidy > 0 {
+                // No address to match (ycashd 6.20.0 dropped `foundersaddress`): the output
+                // equal to the other share is the fund's; among several, the learned address.
+                let hits: Vec<usize> = mine.iter().enumerate().filter(|(_, m)| m.1 == other_subsidy).map(|(i, _)| i).collect();
+                let pick = match hits.len() {
+                    0 => None,
+                    1 => Some(hits[0]),
+                    _ => hits.iter().copied().find(|&i| self.fund_addr.is_some() && mine[i].2 == self.fund_addr).or(Some(hits[0])),
+                };
+                if let Some(i) = pick {
                     let (n, z, a) = mine.remove(i);
+                    if hits.len() == 1 && a.is_some() {
+                        self.fund_addr = a.clone();
+                    }
                     rows.push(Row { height, txid: cb.txid.clone(), vout: n, kind: Kind::SubsidyOther, zat: z, payee: a.unwrap_or_default(), ref_height: None });
                 }
             }
@@ -761,6 +777,33 @@ mod tests {
         assert_eq!(m.by_payee["hash160:0202020202020202020202020202020202020202"].blocks_mined, 1);
         assert!(!m.wants_block("bb", 10));
         assert!(m.wants_block("cc", 10));
+    }
+
+    #[test]
+    fn subsidy_other_without_founders_address() {
+        // ycashd 6.20.0: `getblocksubsidy` is only {miner, founders, totalblocksubsidy}.
+        let s620 = |m: f64, f: f64| -> BlockSubsidy { serde_json::from_value(json!({"miner": m, "founders": f, "totalblocksubsidy": m + f})).unwrap() };
+        let mut m = RevenueModel::new(100);
+        let fund = json!({"addresses": ["fund"], "hex": ""});
+        let pool2 = json!({"addresses": ["pool2"], "hex": ""});
+        // (1) one output equals the fund's share: attributed by value, its address learned
+        m.set_subsidy(10, &s620(2.96875, 0.15625));
+        m.on_block(&block(10, "a", vec![tx("cb", &[(2.96975, p2pkh(1)), (0.15625, fund.clone())])]), &[]);
+        let of = |m: &RevenueModel, h: u64, k: Kind| m.block(h).unwrap().rows.iter().filter(|r| r.kind == k).map(|r| (r.zat, r.payee.clone())).collect::<Vec<_>>();
+        assert_eq!(of(&m, 10, Kind::SubsidyOther), vec![(15_625_000, "fund".to_string())]);
+        assert_eq!(of(&m, 10, Kind::Netfee), vec![(100_000, "hash160:0101010101010101010101010101010101010101".to_string())]);
+        // (2) a miner output that also equals the fund's share, listed first: the learned
+        //     address wins the tie, and the coinbase still adds up
+        m.set_subsidy(11, &s620(2.96875, 0.15625));
+        m.on_block(&block(11, "b", vec![tx("cb", &[(0.15625, pool2.clone()), (2.8125, p2pkh(1)), (0.15625, fund.clone())])]), &[]);
+        assert_eq!(of(&m, 11, Kind::SubsidyOther), vec![(15_625_000, "fund".to_string())]);
+        assert_eq!(of(&m, 11, Kind::Subsidy)[0].0, 296_875_000);
+        assert_eq!(of(&m, 11, Kind::Netfee)[0].0, 0);
+        // (3) no fund share (founders 0): nothing is taken out of the miner's outputs
+        m.set_subsidy(12, &s620(3.125, 0.0));
+        m.on_block(&block(12, "c", vec![tx("cb", &[(3.125, p2pkh(1))])]), &[]);
+        assert!(of(&m, 12, Kind::SubsidyOther).is_empty());
+        assert_eq!(of(&m, 12, Kind::Subsidy)[0].0, 312_500_000);
     }
 
     #[test]
