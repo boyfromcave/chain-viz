@@ -55,7 +55,8 @@ jobs:
       - run: cargo install cargo-audit --version 0.22.2 --locked
       # deny.toml: RustSec advisories (yanked crates included), licence allow-list, crates.io only.
       - run: cargo deny --locked check
-      - run: cargo audit --deny warnings
+      # Its own database path: cargo-deny 0.20 clones into ~/.cargo/advisory-db/<hash>, which cargo-audit then refuses as a non-empty clone target.
+      - run: cargo audit --deny warnings --db "$RUNNER_TEMP/advisory-db"
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
