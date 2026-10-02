@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! The event bus: assigns `seq` and `ts`, keeps a bounded in-memory log for `/api/events?since`,
 //! fans out to WebSocket clients over a broadcast channel and appends to the session recorder.
 

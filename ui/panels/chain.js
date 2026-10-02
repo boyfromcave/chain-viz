@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // Chain panel (plan §3.2.1): block DAG newest-right (main row on top, side/orphaned blocks hanging
 // below their fork point), per-node head chips with disagreement highlighted, reorg log, and the
 // three derived risk gauges: fork = disagreeing nodes × seconds disagreeing; orphan = extra blocks

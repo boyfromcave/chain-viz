@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! One task per node: on every wake (poll tick or ZMQ), check the best block, walk any new
 //! blocks back to a known ancestor, refresh `getchaintips`, diff the mempool, and watch
 //! `yed_getinfo`'s counters. Everything it learns goes into the shared `Model` and out through

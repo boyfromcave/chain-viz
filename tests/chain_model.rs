@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! The chain model driven by fixtures recorded from a real `yellowback-devnet` (regtest, three
 //! of its eight nodes: 0 user, 2 pool, 3 pool). Each step holds, per node, `getbestblockhash`,
 //! the `getblock … 1` path new to the fixture (oldest first) and `getchaintips` — exactly what

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! C7: `--keep` eviction of the chain model and the event window, and — against the real
 //! binary, no node needed — `--public` never letting a credential, node address or path out
 //! through `/api/health`, `/api/snapshot`, `/api/events`, the log or an `--export`, while the

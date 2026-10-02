@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! ZMQ `hashblock` / `hashtx` subscriber (pure-Rust `zeromq`, no libzmq). Ycash 4.5 has the
 //! publisher (`-zmqpubhashblock`, `-zmqpubhashtx`; `src/zmq/`) but no `getzmqnotifications`
 //! RPC, so the endpoint comes from `--zmq <node>=<tcp url>` or `devnet.json`'s `zmq` map.

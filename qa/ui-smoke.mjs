@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // DOM-free smoke check of the UI: loads ui/app.js under a tiny fake DOM, points it at a running
 // chain-viz (default http://127.0.0.1:8480), lets it fetch /api/snapshot and /api/events, renders
 // every panel once, and asserts the rendered element counts against the snapshot. No browser.

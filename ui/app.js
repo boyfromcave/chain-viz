@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // chain-viz UI: one store, one render loop, panels as modules. Loads /api/snapshot, opens /ws,
 // applies events incrementally, and resyncs from /api/events?since= after a lag or a reconnect
 // (exponential backoff). Chain topology events additionally schedule a debounced snapshot

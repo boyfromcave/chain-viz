@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Event schema v1: the contract between the collector, the UI, the recorder (`session.jsonl`)
 //! and the tests. Owned by C1; later chunks add variants by APPENDING to `EventKind` and keep
 //! the `#[serde(tag = "kind", rename_all = "snake_case")]` shape.

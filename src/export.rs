@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! `--export <dir>`: a static snapshot the UI opens with no server. The directory gets
 //! `snapshot.json`, `events.json` and `health.json` (the three API answers, redacted as under
 //! `--public`), the embedded `ui/` files, `ui/data.js` (the same three answers as one global,

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // Mempool panel (plan §3.2.2): bubbles by fee rate × time in mempool (radius ~ size), grey unless the
 // entry carries `yb.type` (C3), tiles for count/bytes/fees/median age, a >2-block flag, and a dashed
 // red ring for a tx present on some nodes but not all.

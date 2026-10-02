@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // Static mode: installed by `chain-viz --export <dir>` ahead of app.js, after ui/data.js has set
 // window.CHAIN_VIZ_STATIC = {snapshot, events, health, exported}. Answers the app's /api/*
 // fetches from that object (so the page works from a plain static host and, in browsers that

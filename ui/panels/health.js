@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // Yellowback health panel (plan §3.2.4, C3). Self-contained: builds its own <section> on init,
 // fetches GET /api/yellowback once per new block (and on yb_state / statehash_mismatch events),
 // renders with plain SVG. Follows the panel contract of app.js: `init(store)`, `render(ctx)`.

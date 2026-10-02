@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Where "something changed on node N" comes from. Polling is always on (it is the baseline that
 //! also catches what a push channel misses); a ZMQ subscriber, when a node has one, wakes the
 //! collector the moment a block or tx arrives instead of at the next tick.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // Revenue panel (plan §3.2.5, C4): "what participation pays". Self-contained like health.js:
 // builds its own <section> on init, fetches GET /api/revenue (by=block, payoutKey, attestor)
 // once per new block, renders plain SVG + tables. Every YEC figure carries its USD at that

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Plan §7's load budget, asserted on `/api/health.rpcCalls` recorded from a live run against
 //! the devnet (`tests/fixtures/yb-budget.json`, with the counts the budget is measured against
 //! taken from the same run's `/api/snapshot`). The recording script is in the plan's C3 notes;

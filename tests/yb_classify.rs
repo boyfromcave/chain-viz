@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! `classify.rs` against transactions recorded from a live devnet (`tests/fixtures/yb-txs.json`:
 //! `getrawtransaction … 1` outputs plus the node's own `yed_gettxinfo`): the payload scan must
 //! find every Yellowback tx and name its type the way the node does, and must reject the

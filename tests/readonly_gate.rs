@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Plan §4.2: chain-viz never calls a writer. This gate greps `src/` for every forbidden RPC
 //! name; a match anywhere in the source (code, string, comment) fails the build. The recording
 //! script that made `tests/fixtures/*.json` used `generate`/`invalidateblock` on ONE devnet node

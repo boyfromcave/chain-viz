@@ -1,3 +1,7 @@
+/* Copyright (c) 2026 The Ycash developers
+ * Distributed under the MIT software license, see the accompanying
+ * file LICENSE or https://www.opensource.org/licenses/mit-license.php . */
+
 /* Revenue panel (C4). Page tokens only (style.css): --s1..--s8 categorical, status colours,
    --grid/--axis/--ink/--muted, --surface. Nothing here redefines a colour. */
 #panel-revenue .rv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

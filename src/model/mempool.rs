@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! The mempool across nodes: one entry per txid with the first-seen time per node and the set of
 //! nodes that currently hold it (§3.2.2's cross-node mark), fed a fresh `getrawmempool true`
 //! per node per poll.

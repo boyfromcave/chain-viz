@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // Small DOM/SVG helpers shared by every panel. No framework, no build step.
 const SVG = 'http://www.w3.org/2000/svg';
 

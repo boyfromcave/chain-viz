@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 The Ycash developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+#
 # Soak: sample a running chain-viz for N minutes and assert flat memory and a steady RPC rate.
 #   qa/soak.sh <url> <pid> <minutes> [interval-secs]
 # Every interval: RSS (ps -o rss), /api/health seq, the sum of rpcCalls, and the count of `note`

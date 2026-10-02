@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! `--replay <file> [--speed N]`: the server with no node. The events of a recorded session are
 //! applied to the same `Model` and published on the same `Bus` the collector would use, so the
 //! UI and the API are unchanged; only what RPC alone supplies (`yedInfo`, `chain.tips`, the

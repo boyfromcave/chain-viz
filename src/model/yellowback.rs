@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! The Yellowback health model (plan §3.2.4): per-node `yed_getstats` and `yed_getstatehash`,
 //! one node's (the "leader", the lowest-id healthy Yellowback node) `yed_getprice`,
 //! `yed_getactivation`, `yed_listminers`, `yed_listattestors`, `yed_listvaults`,

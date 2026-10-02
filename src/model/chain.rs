@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! The block DAG across nodes: per-node heads, per-node `getchaintips`, and the fork / orphan /
 //! reorg detection of plan §3.3, derived purely from what each node reports. No consensus
 //! opinion: where nodes disagree the model shows the disagreement; the "main chain" is only the

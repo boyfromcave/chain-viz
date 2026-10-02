@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Session files (`--record <dir>/session.jsonl`, `--replay <file>`): one JSON event per line,
 //! the first line of every run a `session` header. The `Recorder` appends; `read_session`
 //! parses. `session.jsonl` is opened in append mode, so a restart with the same `--record`

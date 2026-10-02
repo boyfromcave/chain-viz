@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! The revenue ledger (plan §3.2.5, C4): one attributed output per row,
 //! `(height, txid, vout, kind, zat, payee)`, built from each confirmed block's coinbase
 //! (`subsidy`, `subsidy_other`, `netfee`) and from every Yellowback transaction's `yed_gettxinfo`

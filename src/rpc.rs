@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! JSON-RPC 1.0 over HTTP to `ycashd`, one client per node, read-only by construction (the
 //! methods here are the plan's §4.1 list; `tests/readonly_gate.rs` greps `src/` for anything
 //! from §4.2). Field names of the `yed_*` responses follow

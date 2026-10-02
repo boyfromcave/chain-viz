@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! `--public` (plan C-10): the pieces a hosted instance needs. A per-client-IP token bucket on
 //! every request (429 past it), a cap on open WebSocket connections (503 past it), a cap on
 //! how many events one `/api/events` call returns, and a redaction pass over every JSON that

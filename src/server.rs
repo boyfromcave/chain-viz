@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! axum: `GET /` (the embedded `ui/`), `/api/health`, `/api/snapshot`, `/api/events?since=`,
 //! `WS /ws`. Binds loopback by default (`--listen`). Nothing in a response carries a node URL
 //! or credential.

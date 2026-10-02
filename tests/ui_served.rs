@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Every file under `ui/` is embedded and served (200, right content type) by the router, at `/`
 //! and `/ui/<path>`; the page shell references only paths that exist. No node needed.
 

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Round trip: `tests/fixtures/session-reorg2.jsonl` was recorded with `--record` from a live
 //! `yellowback-devnet` (8 nodes, `--portseed 47`): a `mine 2`, then two blocks invalidated on
 //! node 3 by the recording script (outside this repo) and three mined there, so every other

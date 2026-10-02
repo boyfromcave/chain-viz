@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 //! Plan §5 C4: the ledger reconciles with the node. `tests/fixtures/revenue-blocks.json` holds
 //! a run of devnet blocks (`getblock … 2`), each with `getblocksubsidy`, `yed_gettag` and the
 //! `yed_gettxinfo` of every Yellowback tx, plus the sums the recorder computed from the node's

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 The Ycash developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+
 // Header: chain name, nodes up, tip, time since last block (large, coloured past 2× and 4× the
 // target spacing), connection state, seq.
 import { fmtSecs, short } from '../lib.js';
