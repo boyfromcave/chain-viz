@@ -37,6 +37,14 @@ pub fn static_index(index: &str) -> String {
     }
 }
 
+/// JSON for a `<script>` body (audit H-14): `<`, `>`, `&` and the line separators U+2028/2029
+/// become `\uXXXX` escapes, which JSON allows inside strings and which never occur outside one
+/// in serde's output, so the text is the same value and can no longer close the element
+/// (`</script>`) or break a JS parser.
+pub fn js_embed(v: &Value) -> String {
+    v.to_string().replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026").replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029")
+}
+
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension(format!("{}.tmp", path.extension().and_then(|e| e.to_str()).unwrap_or("")));
     std::fs::write(&tmp, bytes)?;
@@ -50,7 +58,7 @@ pub fn write(dir: &Path, snapshot: &Value, events: &Value, health: &Value) -> st
     write_atomic(&dir.join("events.json"), events.to_string().as_bytes())?;
     write_atomic(&dir.join("health.json"), health.to_string().as_bytes())?;
     let data = json!({"snapshot": snapshot, "events": events, "health": health, "exported": now()});
-    write_atomic(&dir.join("ui").join("data.js"), format!("window.CHAIN_VIZ_STATIC = {};\n", data).as_bytes())?;
+    write_atomic(&dir.join("ui").join("data.js"), format!("window.CHAIN_VIZ_STATIC = {};\n", js_embed(&data)).as_bytes())?;
     for (path, bytes) in ui_files() {
         if path == "index.html" {
             write_atomic(&dir.join("index.html"), static_index(std::str::from_utf8(bytes).unwrap_or("")).as_bytes())?;
@@ -69,7 +77,8 @@ pub fn write(dir: &Path, snapshot: &Value, events: &Value, health: &Value) -> st
 /// made to be handed around.
 pub async fn write_from(state: &AppState, dir: &Path) -> std::io::Result<()> {
     let mut snapshot = state.snapshot_json().await;
-    let mut events = state.events_json(0);
+    // The whole event window, not the `/api/events` page (`public::EVENTS_CAP`).
+    let mut events = serde_json::to_value(state.bus.since(0)).unwrap_or(Value::Null);
     let mut health = state.health_json().await;
     for v in [&mut snapshot, &mut events, &mut health] {
         public::redact(v);
@@ -117,5 +126,17 @@ mod tests {
         let shim = out.find("ui/static.js").unwrap();
         let app = out.find("ui/app.js").unwrap();
         assert!(data < shim && shim < app, "data, then shim, then the app");
+    }
+
+    #[test]
+    fn embedded_json_cannot_close_the_script() {
+        let v = json!({"note": "</script><script>alert(1)</script> a & b \u{2028}\u{2029}", "n": 1, "list": ["<", ">"]});
+        let out = js_embed(&v);
+        for raw in ["<", ">", "&", "\u{2028}", "\u{2029}"] {
+            assert!(!out.contains(raw), "{:?} left raw in {}", raw, out);
+        }
+        assert!(!out.contains("</script"));
+        let back: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(back, v, "the escapes decode to the same value");
     }
 }

@@ -14,7 +14,7 @@ use tracing::{info, warn};
 use chain_viz::auth::{read_cookie, read_cookie_in};
 use chain_viz::bus::Bus;
 use chain_viz::collector::{clients, Collector, Model};
-use chain_viz::public::{self, PublicState};
+use chain_viz::public::{self, Cidr, PublicState, WsCap};
 use chain_viz::replay::ReplayStatus;
 use chain_viz::rpc::{node_from_url, nodes_from_devnet, NodeConfig};
 use chain_viz::server::{router, AppState};
@@ -73,10 +73,21 @@ struct Cli {
     /// Blocks kept in the model.
     #[arg(long, default_value_t = 5000)]
     keep: u64,
-    /// Public mode: per-IP rate limit, WebSocket and /api/events caps, and no node address,
-    /// URL, credential or path in any response (node ids stay).
+    /// Public mode: per-IP rate limit and no node address, URL, credential or path in any
+    /// response (node ids stay). Required for a non-loopback --listen.
     #[arg(long)]
     public: bool,
+    /// Reverse proxies (IP or CIDR, repeatable) whose X-Forwarded-For names the client for the
+    /// --public rate limit; from any other peer the header is ignored.
+    #[arg(long, value_name = "CIDR", value_delimiter = ',')]
+    trusted_proxies: Vec<Cidr>,
+    /// Browser origins (scheme://host[:port], repeatable; `*` = any) allowed to open /ws besides
+    /// the request's own Host.
+    #[arg(long, value_name = "ORIGIN", value_delimiter = ',')]
+    allow_origin: Vec<String>,
+    /// Allow a non-loopback --listen without --public (no rate limit, no redaction).
+    #[arg(long)]
+    i_know_this_is_exposed: bool,
     /// Write a static snapshot (index.html + ui/ + snapshot/events/health.json) the UI opens
     /// with no server, every 30 s and at shutdown.
     #[arg(long, value_name = "DIR")]
@@ -125,10 +136,23 @@ async fn main() {
             warn!("{} is not implemented yet (ignored)", flag);
         }
     }
-    let public = cli.public.then(|| Arc::new(PublicState::default()));
+    let public = cli.public.then(|| Arc::new(PublicState::new(cli.trusted_proxies.clone())));
     if public.is_some() {
-        info!("public mode: {} req/s per client (burst {}), {} websockets, {} events per /api/events", public::RATE, public::BURST, public::MAX_WS, public::EVENTS_CAP);
+        info!(
+            "public mode: {} req/s per client (burst {}), {} trusted proxies; {} websockets, {} events per /api/events",
+            public::RATE,
+            public::BURST,
+            cli.trusted_proxies.len(),
+            public::MAX_WS,
+            public::EVENTS_CAP
+        );
+    } else if !cli.trusted_proxies.is_empty() {
+        warn!("--trusted-proxies has no effect without --public");
     }
+    if !cli.listen.ip().is_loopback() && !cli.public && !cli.i_know_this_is_exposed {
+        fail(&format!("--listen {} is not loopback: pass --public (rate limit, redaction), or --i-know-this-is-exposed to serve it bare (README, Hosting)", cli.listen));
+    }
+    let ws = Arc::new(WsCap::default());
     if let Some(file) = &cli.replay {
         // No node: the model is rebuilt from the file's events and the same server serves it.
         let text = std::fs::read_to_string(file).unwrap_or_else(|e| fail(&format!("--replay {}: {}", file.display(), e)));
@@ -145,7 +169,8 @@ async fn main() {
             ..Default::default()
         }));
         tokio::spawn(chain_viz::replay::run(model.clone(), bus.clone(), events, cli.speed, status.clone()));
-        serve(Arc::new(AppState { model, bus, clients: Vec::new(), replay: Some(status), public }), cli.listen, cli.pid_file.clone(), cli.export.clone()).await;
+        serve(Arc::new(AppState { model, bus, clients: Vec::new(), replay: Some(status), public, ws, allow_origin: cli.allow_origin.clone() }), cli.listen, cli.pid_file.clone(), cli.export.clone())
+            .await;
         return;
     }
 
@@ -174,6 +199,12 @@ async fn main() {
     }
     if nodes.is_empty() {
         fail("no nodes: pass --devnet <dir> or --nodes <url>[,<url>…]");
+    }
+    // H-9: Basic auth over plain http to another host puts the RPC password on the wire.
+    for n in &nodes {
+        if !n.url.starts_with("https://") && !chain_viz::rpc::is_loopback_url(&n.url) {
+            warn!("node {}: RPC over plain http to a non-loopback host sends the password in clear; use an ssh tunnel or TLS", n.id);
+        }
     }
     let zmq: HashMap<String, String> =
         cli.zmq.iter().map(|s| s.split_once('=').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_else(|| fail(&format!("--zmq {}: want <node id>=<tcp url>", s)))).collect();
@@ -213,7 +244,7 @@ async fn main() {
     let collector = Arc::new(Collector { model: model.clone(), bus: bus.clone(), clients: clients.clone(), poll, devnet_dir: cli.devnet.clone(), backfill: Default::default() });
     collector.start();
 
-    serve(Arc::new(AppState { model, bus, clients, replay: None, public }), cli.listen, cli.pid_file.clone(), cli.export.clone()).await;
+    serve(Arc::new(AppState { model, bus, clients, replay: None, public, ws, allow_origin: cli.allow_origin.clone() }), cli.listen, cli.pid_file.clone(), cli.export.clone()).await;
 }
 
 /// Bind, print the URL, serve until SIGINT/SIGTERM; the pid file lives for the duration.
@@ -227,7 +258,7 @@ async fn serve(state: Arc<AppState>, listen: SocketAddr, pid_file: Option<PathBu
         chain_viz::export::spawn(state.clone(), dir.clone());
     }
     if !listen.ip().is_loopback() && state.public.is_none() {
-        warn!("listening on a non-loopback address without --public: put a reverse proxy in front or pass --public (README, Hosting)");
+        warn!("listening on a non-loopback address without --public (--i-know-this-is-exposed): no rate limit, no redaction");
     }
     let listener = tokio::net::TcpListener::bind(listen).await.unwrap_or_else(|e| fail(&format!("bind {}: {}", listen, e)));
     let addr = listener.local_addr().unwrap_or(listen);

@@ -12,7 +12,15 @@ use chain_viz::collector::Model;
 use chain_viz::server::{router, ui_paths, AppState};
 
 async fn serve() -> String {
-    let state = Arc::new(AppState { model: Arc::new(tokio::sync::RwLock::new(Model::default())), bus: Arc::new(Bus::new(64, None)), clients: Vec::new(), replay: None, public: None });
+    let state = Arc::new(AppState {
+        model: Arc::new(tokio::sync::RwLock::new(Model::default())),
+        bus: Arc::new(Bus::new(64, None)),
+        clients: Vec::new(),
+        replay: None,
+        public: None,
+        ws: Default::default(),
+        allow_origin: Vec::new(),
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, router(state)).await.unwrap() });

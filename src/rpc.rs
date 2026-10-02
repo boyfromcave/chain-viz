@@ -88,10 +88,22 @@ fn zmq_endpoint(node: Option<&Value>) -> Option<String> {
     block.or(tx).map(str::to_string)
 }
 
+/// Does an RPC URL point at this machine (`http://127.0.0.1:8832`, `[::1]`, `localhost`)?
+pub fn is_loopback_url(url: &str) -> bool {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let hostport = rest.rsplit_once('@').map(|(_, h)| h).unwrap_or(rest);
+    let hostport = hostport.split('/').next().unwrap_or("");
+    let host = match hostport.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => hostport.rsplit_once(':').map(|(h, _)| h).unwrap_or(hostport),
+    };
+    host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false)
+}
+
 /// Parse one `--nodes` entry: `http://user:pass@host:port` or `http://host:port` (then the
-/// `--rpcuser/--rpcpassword` defaults apply).
+/// `--rpcuser/--rpcpassword` defaults apply). Error text never quotes the URL's userinfo (H-9).
 pub fn node_from_url(id: &str, url: &str, default_user: &str, default_password: &str) -> Result<NodeConfig, String> {
-    let (scheme, rest) = url.split_once("://").ok_or_else(|| format!("{}: not a URL", url))?;
+    let (scheme, rest) = url.split_once("://").ok_or_else(|| format!("--nodes entry {}: not a URL (want http://[user:pass@]host:port)", id))?;
     let (creds, hostport) = match rest.rsplit_once('@') {
         Some((c, h)) => (Some(c), h),
         None => (None, rest),
@@ -104,7 +116,7 @@ pub fn node_from_url(id: &str, url: &str, default_user: &str, default_password: 
         None => (default_user.to_string(), default_password.to_string()),
     };
     if hostport.is_empty() {
-        return Err(format!("{}: no host", url));
+        return Err(format!("--nodes entry {}: no host", id));
     }
     Ok(NodeConfig { id: id.to_string(), url: format!("{}://{}", scheme, hostport.trim_end_matches('/')), user, password, zmq: None, role: None })
 }
@@ -637,6 +649,21 @@ mod tests {
         let n = node_from_url("1", "http://127.0.0.1:18232", "du", "dp").unwrap();
         assert_eq!((n.user.as_str(), n.password.as_str()), ("du", "dp"));
         assert!(node_from_url("2", "127.0.0.1", "", "").is_err());
+        // H-9: a bad entry's error names the entry, never the password it carried.
+        let e = node_from_url("3", "u:hunter2@nohost", "", "").unwrap_err();
+        assert!(!e.contains("hunter2") && e.contains("entry 3"), "{}", e);
+        let e = node_from_url("4", "http://u:hunter2@", "", "").unwrap_err();
+        assert!(!e.contains("hunter2"), "{}", e);
+    }
+
+    #[test]
+    fn loopback_urls() {
+        for u in ["http://127.0.0.1:8832", "http://u:p@localhost:8832/", "http://[::1]:8832", "https://LOCALHOST", "http://127.5.5.5:1"] {
+            assert!(is_loopback_url(u), "{}", u);
+        }
+        for u in ["http://10.0.0.7:8832", "http://u:p@seed.example.org:8832", "http://[fd00::1]:8832", "http://0.0.0.0:8832"] {
+            assert!(!is_loopback_url(u), "{}", u);
+        }
     }
 
     #[test]

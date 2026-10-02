@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -23,7 +23,7 @@ use tracing::debug;
 
 use crate::bus::Bus;
 use crate::collector::Model;
-use crate::public::{self, PublicState};
+use crate::public::{self, PublicState, WsCap};
 use crate::replay::ReplayStatus;
 use crate::rpc::RpcClient;
 
@@ -38,8 +38,12 @@ pub struct AppState {
     pub clients: Vec<RpcClient>,
     /// Set under `--replay`: `/api/health.replay = {file, pos, total, speed}`.
     pub replay: Option<Arc<ReplayStatus>>,
-    /// Set under `--public` (`public.rs`): rate limit, WS cap, events cap, redaction.
+    /// Set under `--public` (`public.rs`): rate limit and redaction of every response.
     pub public: Option<Arc<PublicState>>,
+    /// Open WebSocket count against `public::MAX_WS`, always (audit H-12).
+    pub ws: Arc<WsCap>,
+    /// `--allow-origin`: origins besides the request's own `Host` allowed to open `/ws` (audit H-13).
+    pub allow_origin: Vec<String>,
 }
 
 impl AppState {
@@ -69,7 +73,7 @@ impl AppState {
             "rpcCalls": rpc,
             "replay": self.replay.as_ref().map(|r| r.json()),
             "public": self.public.is_some(),
-            "wsOpen": self.public.as_ref().map(|p| p.ws_open.load(std::sync::atomic::Ordering::Relaxed)),
+            "wsOpen": self.ws.open.load(std::sync::atomic::Ordering::Relaxed),
         })
     }
     /// `/api/snapshot` as a value (also what `--export` writes).
@@ -77,12 +81,11 @@ impl AppState {
         let m = self.model.read().await;
         serde_json::to_value(m.snapshot(self.bus.last_seq(), SNAPSHOT_BLOCKS)).unwrap_or(Value::Null)
     }
-    /// `/api/events?since=` as a value: capped at `public::EVENTS_CAP` under `--public`.
+    /// `/api/events?since=` as a value: at most `public::EVENTS_CAP` events (audit H-12); the
+    /// export (`export.rs`) reads the bus directly for the whole window.
     pub fn events_json(&self, since: u64) -> Value {
         let mut list = self.bus.since(since);
-        if self.public.is_some() {
-            list.truncate(public::EVENTS_CAP);
-        }
+        list.truncate(public::EVENTS_CAP);
         serde_json::to_value(list).unwrap_or(Value::Null)
     }
 }
@@ -215,23 +218,26 @@ async fn events(State(s): State<Arc<AppState>>, Query(q): Query<Since>) -> Json<
     s.finish(s.events_json(q.since))
 }
 
-async fn ws(State(s): State<Arc<AppState>>, upgrade: WebSocketUpgrade) -> Response {
-    // Under --public the connection is counted before the upgrade; the guard lives with the session.
-    let guard = match &s.public {
-        Some(p) => match p.ws_guard() {
-            Some(g) => Some(g),
-            None => return (StatusCode::SERVICE_UNAVAILABLE, "too many websocket connections").into_response(),
-        },
-        None => None,
+async fn ws(State(s): State<Arc<AppState>>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
+    // A browser on another origin is refused (H-13): WebSockets are not covered by same-origin.
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
+    if !public::origin_allowed(origin, host, &s.allow_origin) {
+        return (StatusCode::FORBIDDEN, "origin not allowed").into_response();
+    }
+    // The connection is counted before the upgrade; the guard lives with the session.
+    let Some(guard) = s.ws.guard() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "too many websocket connections").into_response();
     };
-    upgrade.on_upgrade(move |socket| async move {
+    upgrade.max_message_size(public::WS_MAX_MESSAGE).on_upgrade(move |socket| async move {
         let _guard = guard;
         ws_session(socket, s).await
     })
 }
 
 async fn ws_session(mut socket: WebSocket, s: Arc<AppState>) {
-    let redact = s.public.is_some();
+    // Frames are redacted whether or not --public is on (H-13): a page that got past the
+    // Origin check (`--allow-origin *`) still sees no address, credential or path.
     let mut rx = s.bus.subscribe();
     let hello = json!({"kind": "hello", "seq": s.bus.last_seq(), "version": env!("CARGO_PKG_VERSION")});
     if socket.send(Message::Text(hello.to_string().into())).await.is_err() {
@@ -241,15 +247,9 @@ async fn ws_session(mut socket: WebSocket, s: Arc<AppState>) {
         tokio::select! {
             ev = rx.recv() => match ev {
                 Ok(e) => {
-                    let text = if redact {
-                        let Ok(mut v) = serde_json::to_value(&e) else { continue };
-                        public::redact(&mut v);
-                        v.to_string()
-                    } else {
-                        let Ok(text) = serde_json::to_string(&e) else { continue };
-                        text
-                    };
-                    if socket.send(Message::Text(text.into())).await.is_err() { return; }
+                    let Ok(mut v) = serde_json::to_value(&e) else { continue };
+                    public::redact(&mut v);
+                    if socket.send(Message::Text(v.to_string().into())).await.is_err() { return; }
                 }
                 Err(RecvError::Lagged(n)) => {
                     debug!("ws client lagged {} events", n);

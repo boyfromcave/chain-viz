@@ -5,9 +5,12 @@
 //! C7: `--keep` eviction of the chain model and the event window, and — against the real
 //! binary, no node needed — `--public` never letting a credential, node address or path out
 //! through `/api/health`, `/api/snapshot`, `/api/events`, the log or an `--export`, while the
-//! rate limit answers 429 past the burst.
+//! rate limit answers 429 past the burst. Audit 2026-10-01: `X-Forwarded-For` only from
+//! `--trusted-proxies` (H-11), a non-loopback bind refused without `--public` (H-12), the
+//! `Origin` check and always-redacted frames on `/ws` (H-13), the plain-http warning (H-9).
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -89,8 +92,39 @@ fn spawn(args: &[&str]) -> (std::process::Child, String, std::thread::JoinHandle
 }
 
 fn get(url: &str) -> (u16, String) {
-    let r = reqwest::blocking::Client::new().get(url).send().expect("GET");
+    get_with(url, &[])
+}
+
+fn get_with(url: &str, headers: &[(&str, &str)]) -> (u16, String) {
+    let mut req = reqwest::blocking::Client::new().get(url);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let r = req.send().expect("GET");
     (r.status().as_u16(), r.text().unwrap_or_default())
+}
+
+/// A raw WebSocket handshake on `/ws` with the given `Origin` (none when empty): the status
+/// line and whatever the server sent in the next `read_for`.
+fn ws_handshake(base: &str, origin: &str, read_for: Duration) -> (u16, String) {
+    let hostport = base.strip_prefix("http://").unwrap();
+    let mut s = TcpStream::connect(hostport).expect("connect");
+    s.set_read_timeout(Some(read_for)).unwrap();
+    let origin_line = if origin.is_empty() { String::new() } else { format!("Origin: {}\r\n", origin) };
+    write!(s, "GET /ws HTTP/1.1\r\nHost: {}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n{}\r\n", hostport, origin_line)
+        .unwrap();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        match s.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(_) => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&buf).to_string();
+    let status = text.strip_prefix("HTTP/1.1 ").and_then(|t| t[..3].parse().ok()).unwrap_or(0);
+    (status, text)
 }
 
 fn assert_clean(what: &str, text: &str) {
@@ -138,6 +172,15 @@ fn public_mode_leaks_nothing_and_rate_limits() {
     for (what, text) in [("/api/health", &health), ("/api/snapshot", &snapshot), ("/api/events", &events)] {
         assert_clean(what, text);
     }
+    // H-13: a cross-origin page cannot open /ws; same-origin and non-browser clients can.
+    let (st, _) = ws_handshake(&base, "http://evil.example", Duration::from_millis(200));
+    assert_eq!(st, 403, "cross-origin websocket upgrade");
+    let (st, _) = ws_handshake(&base, &format!("http://{}", base.strip_prefix("http://").unwrap()), Duration::from_millis(200));
+    assert_eq!(st, 101, "same-origin websocket upgrade");
+    let (st, frames) = ws_handshake(&base, "", Duration::from_millis(300));
+    assert_eq!(st, 101, "no Origin (not a browser)");
+    assert!(frames.contains("\"kind\":\"hello\""), "frames:\n{}", frames);
+    assert_clean("ws frames", &frames);
     // The burst is 40 tokens: 60 quick requests must see a 429.
     let mut limited = 0;
     for _ in 0..60 {
@@ -146,12 +189,22 @@ fn public_mode_leaks_nothing_and_rate_limits() {
         }
     }
     assert!(limited > 0, "no 429 in 60 quick requests");
+    // H-11: without --trusted-proxies a rotating X-Forwarded-For does not buy a fresh bucket.
+    let mut limited = 0;
+    for i in 0..60 {
+        if get_with(&format!("{}/api/health", base), &[("x-forwarded-for", &format!("10.9.{}.{}", i / 256, i % 256))]).0 == 429 {
+            limited += 1;
+        }
+    }
+    assert!(limited > 0, "X-Forwarded-For from an untrusted peer chose its own bucket");
     // Stop (SIGTERM: the final export runs) and read the log.
     let _ = Command::new("kill").arg(child.id().to_string()).status();
     let _ = child.wait();
     let log = log.join().unwrap();
     assert!(log.contains("public mode"), "log:\n{}", log);
     assert!(log.contains("node 0") || log.contains("node 1"), "the collector logged its failure by node id:\n{}", log);
+    assert!(log.contains("node 1: RPC over plain http to a non-loopback host"), "H-9 warning for the remote node:\n{}", log);
+    assert!(!log.contains("node 0: RPC over plain http"), "no warning for the loopback node:\n{}", log);
     assert_clean("stderr log", &log);
     // The export: shell, ui, data and the three json files, all clean.
     for f in ["index.html", "snapshot.json", "events.json", "health.json", "ui/data.js", "ui/static.js", "ui/app.js", "ui/panels/chain.js"] {
@@ -163,4 +216,83 @@ fn public_mode_leaks_nothing_and_rate_limits() {
     assert!(!index.contains("\"/ui/"), "export index uses relative paths");
     assert!(index.contains("ui/data.js") && index.contains("ui/static.js"));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// H-11: from a trusted proxy the last untrusted `X-Forwarded-For` hop is the client, so the
+/// header can be used to pick a bucket (what a real proxy does) but a spoofed first entry
+/// cannot. H-13: `--allow-origin` lets a named foreign origin in. Frames are redacted without
+/// `--public` too.
+#[test]
+fn trusted_proxy_xff_and_allow_origin() {
+    let (mut child, base, log) = spawn(&[
+        "--nodes",
+        "http://alice:hunter2@localhost:1",
+        "--public",
+        "--trusted-proxies",
+        "127.0.0.0/8,::1",
+        "--allow-origin",
+        "https://viz.example.org",
+        "--listen",
+        "127.0.0.1:0",
+        "--poll",
+        "0.2",
+    ]);
+    // Each request names a different client behind the (loopback, trusted) proxy: no 429 even
+    // though the burst is 40 — the header is honoured.
+    for i in 0..60 {
+        let (st, _) = get_with(&format!("{}/api/health", base), &[("x-forwarded-for", &format!("203.0.113.{}", i % 250))]);
+        assert_eq!(st, 200, "request {} behind the trusted proxy", i);
+    }
+    // The spoofed first entry rotates, the hop the proxy appended does not: one bucket, 429.
+    let mut limited = 0;
+    for i in 0..60 {
+        if get_with(&format!("{}/api/health", base), &[("x-forwarded-for", &format!("10.9.9.{}, 198.51.100.7", i % 250))]).0 == 429 {
+            limited += 1;
+        }
+    }
+    assert!(limited > 0, "the client-supplied first entry chose the bucket");
+    let (st, _) = ws_handshake(&base, "https://viz.example.org", Duration::from_millis(200));
+    assert_eq!(st, 101, "--allow-origin origin");
+    let (st, _) = ws_handshake(&base, "https://other.example.org", Duration::from_millis(200));
+    assert_eq!(st, 403);
+    let _ = Command::new("kill").arg(child.id().to_string()).status();
+    let _ = child.wait();
+    let _ = log.join();
+}
+
+/// H-13 / H-12 without `--public`: frames are still redacted and the Origin check still applies.
+/// A replayed session (speed 1) emits a note carrying a URL with the password two seconds in,
+/// after the socket is open.
+#[test]
+fn local_mode_ws_is_origin_checked_and_redacted() {
+    let file = std::env::temp_dir().join(format!("chain-viz-ws-{}.jsonl", std::process::id()));
+    std::fs::write(
+        &file,
+        concat!(
+            "{\"seq\":1,\"ts\":1000.0,\"kind\":\"session\",\"version\":1,\"chainViz\":\"0.1.0\",\"nodes\":[\"0\"],\"chain\":\"regtest\"}\n",
+            "{\"seq\":2,\"ts\":1000.0,\"node\":\"0\",\"kind\":\"note\",\"text\":\"start\"}\n",
+            "{\"seq\":3,\"ts\":1002.0,\"node\":\"0\",\"kind\":\"note\",\"text\":\"node 0: rpc transport: error sending request for url (http://alice:hunter2@secret-node.example:1/)\"}\n",
+        ),
+    )
+    .unwrap();
+    let (mut child, base, log) = spawn(&["--replay", file.to_str().unwrap(), "--listen", "127.0.0.1:0"]);
+    let (st, _) = ws_handshake(&base, "http://localhost:9999", Duration::from_millis(200));
+    assert_eq!(st, 403, "another local port is another origin");
+    let (st, frames) = ws_handshake(&base, "", Duration::from_millis(3500));
+    assert_eq!(st, 101);
+    assert!(frames.contains("\"kind\":\"note\"") && frames.contains("[redacted]"), "the replayed note arrived, redacted:\n{}", frames);
+    assert_clean("ws frames without --public", &frames);
+    let _ = std::fs::remove_file(&file);
+    let _ = Command::new("kill").arg(child.id().to_string()).status();
+    let _ = child.wait();
+    let _ = log.join();
+}
+
+/// H-12: a non-loopback bind without `--public` is an error (exit 2), not a warning.
+#[test]
+fn non_loopback_bind_needs_public() {
+    let out = Command::new(env!("CARGO_BIN_EXE_chain-viz")).args(["--nodes", "http://127.0.0.1:1", "--listen", "0.0.0.0:0"]).output().expect("run chain-viz");
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--public") && err.contains("--i-know-this-is-exposed"), "{}", err);
 }
