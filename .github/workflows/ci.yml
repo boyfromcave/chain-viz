@@ -1,6 +1,12 @@
-# chain-viz CI: build, test, clippy (-D warnings) and fmt on Linux and macOS with stable Rust;
-# a tag `v*` also builds release binaries (linux x86_64, macOS arm64) and attaches them to the
-# GitHub release (plan C7, "release build in CI").
+# chain-viz CI: build, test, clippy (-D warnings) and fmt on Linux and macOS with the exact Rust
+# release rust-toolchain.toml pins; `cargo deny check` (advisories, licences, sources) and
+# `cargo audit` on every run; a tag `v*` also builds release binaries (linux x86_64, macOS
+# arm64) and attaches them to the GitHub release (plan C7, "release build in CI").
+#
+# Audit 2026-10-01: every action is pinned to a commit SHA (H-15; the comment carries the tag it
+# was taken from — bump both together), the toolchain is the exact pinned release (H-16/I-8),
+# the workflow token is read-only except in the release job (H-15), cargo-deny/cargo-audit are
+# installed at exact versions (I-7).
 name: ci
 
 on:
@@ -9,8 +15,12 @@ on:
     tags: ["v*"]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.91.0
 
 jobs:
   check:
@@ -20,19 +30,36 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo fmt --check
       - run: cargo build --locked
       - run: cargo test --locked
       - run: cargo clippy --all-targets --locked -- -D warnings
 
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-all-crates: true
+      - run: cargo install cargo-deny --version 0.18.3 --locked
+      - run: cargo install cargo-audit --version 0.22.2 --locked
+      # deny.toml: RustSec advisories (yanked crates included), licence allow-list, crates.io only.
+      - run: cargo deny --locked check
+      - run: cargo audit --deny warnings
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: check
+    needs: [check, audit]
     strategy:
       matrix:
         include:
@@ -43,20 +70,22 @@ jobs:
             target: aarch64-apple-darwin
             asset: chain-viz-macos-arm64
     runs-on: ${{ matrix.os }}
+    # The only job that writes: it uploads the release assets.
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - run: |
           cp target/${{ matrix.target }}/release/chain-viz ${{ matrix.asset }}
           tar czf ${{ matrix.asset }}.tar.gz ${{ matrix.asset }}
           shasum -a 256 ${{ matrix.asset }}.tar.gz > ${{ matrix.asset }}.tar.gz.sha256
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             ${{ matrix.asset }}.tar.gz
