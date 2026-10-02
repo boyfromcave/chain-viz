@@ -1,4 +1,7 @@
 [toolchain]
-# chain-viz builds on stable. Shields the crate from an enclosing rust-toolchain the way yolo/
-# does (ycash-dd pins 1.51 for librustzcash).
-channel = "stable"
+# chain-viz builds on an exact stable release (audit H-16/I-8: reproducible across time; the
+# attestor agent pins the same one). Bump deliberately, by PR, together with CI. The file also
+# shields the crate from an enclosing rust-toolchain the way yolo/ does (ycash-dd pins 1.51 for
+# librustzcash).
+channel = "1.91.0"
+components = ["clippy", "rustfmt"]
