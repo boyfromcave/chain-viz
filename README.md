@@ -18,7 +18,8 @@ status table and the C-F findings; `docs/mapping.md` §18 mirrors the node-side 
 
 ## Install and build
 
-Rust stable (`rust-toolchain.toml`), no system dependencies (rustls for HTTP, pure-Rust ZMQ):
+Rust 1.91.0 (`rust-toolchain.toml` pins the exact release; rustup fetches it), no system
+dependencies (rustls for HTTP, pure-Rust ZMQ):
 
 ```
 cargo build --release                                   # target/release/chain-viz
@@ -123,13 +124,16 @@ kept), not by uptime.
 | `--cookie <PATH>` | A node's RPC cookie file; ahead of `--rpcuser`. Conflicts with `--datadir`. |
 | `--datadir <DIR>` | Reads `<DIR>/.cookie` (also `regtest/.cookie`, `testnet3/.cookie`). |
 | `--zmq <ID=URL>` | A node's ZMQ endpoint, repeatable (`--zmq 0=tcp://127.0.0.1:28332`). |
-| `--listen <ADDR>` | HTTP/WS bind address, default `127.0.0.1:8480`. A non-loopback bind without `--public` logs a warning. |
+| `--listen <ADDR>` | HTTP/WS bind address, default `127.0.0.1:8480`. A non-loopback bind is refused without `--public` (or `--i-know-this-is-exposed`). |
 | `--poll <SECS>` | Poll interval; default 1 on regtest, 5 otherwise. |
 | `--record <DIR>` | Append every event to `<DIR>/session.jsonl`. |
 | `--replay <FILE>` | Serve from a recorded session; no node. |
 | `--speed <N>` | Replay speed multiplier, default 1; `0` = as fast as possible. |
 | `--keep <BLOCKS>` | Blocks kept in the model, default 5000. |
-| `--public` | Public mode: per-IP rate limit, WebSocket and `/api/events` caps, no node address, URL, credential or path in any response. |
+| `--public` | Public mode: per-IP rate limit and no node address, URL, credential or path in any response. |
+| `--trusted-proxies <CIDR>` | Reverse proxies (IP or CIDR, repeatable or comma separated) whose `X-Forwarded-For` names the client for the `--public` rate limit; from any other peer the header is ignored. |
+| `--allow-origin <ORIGIN>` | Browser origins (`scheme://host[:port]`, repeatable; `*` = any) allowed to open `/ws` besides the request's own `Host`. |
+| `--i-know-this-is-exposed` | Serve a non-loopback `--listen` without `--public`: no rate limit, no redaction. |
 | `--export <DIR>` | Write a static copy (`index.html`, `ui/`, the three API answers) every 30 s and at shutdown. |
 | `--pid-file <PATH>` | Write the pid there; removed on exit. |
 | `--rpc-concurrency <N>` | In-flight RPC calls allowed per node, default 2. |
@@ -141,8 +145,9 @@ the way out.
 
 ## API
 
-All JSON. Under `--public` every response and WebSocket frame is redacted (URLs, `user@host`,
-`host:port`, paths; node ids stay) and `/api/events` is capped at 2000 events per call.
+All JSON. Under `--public` every response is redacted (URLs, `user@host`, `host:port`, paths;
+node ids stay); WebSocket frames are redacted always. `/api/events` returns at most 2000 events
+per call and at most 64 WebSocket connections are open at once, `--public` or not.
 
 * **`GET /api/health`** — for a monitor or a test to assert on:
   `{ok, nodes, nodesUp, tip{height,hash}, agreeing, disagreeing[], seq, version, chain,
@@ -299,30 +304,43 @@ as a WebSocket. nginx:
 location / {
     proxy_pass         http://127.0.0.1:8480;
     proxy_http_version 1.1;
+    proxy_set_header   Host $host;
     proxy_set_header   Upgrade $http_upgrade;
     proxy_set_header   Connection "upgrade";
     proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 ```
 
-Caddy: `reverse_proxy 127.0.0.1:8480` (WebSockets and `X-Forwarded-For` come by default).
+Caddy: `reverse_proxy 127.0.0.1:8480` (WebSockets, `Host` and `X-Forwarded-For` come by
+default). Start chain-viz as `--public --trusted-proxies 127.0.0.1` behind either: the
+`X-Forwarded-For` a proxy appends is believed only from a peer named in `--trusted-proxies`,
+and of its entries the last one not itself a trusted proxy is the client (nginx appends the
+peer it saw; a client-supplied first entry is never reached). From any other peer the header
+is ignored and the peer is the client. The proxy must pass `Host` through (the `Host $host`
+line above): a browser's `/ws` upgrade is accepted only when its `Origin` host equals the
+request's `Host` — or is listed in `--allow-origin` — so a page on another site cannot read
+the stream.
 
-**`--public`** for an instance that faces the network (with or without a proxy;
-`--listen 0.0.0.0:8480` warns when `--public` is off). It
+**`--public`** for an instance that faces the network — required for a non-loopback
+`--listen` (refused otherwise; `--i-know-this-is-exposed` overrides). It
 
 * rate-limits every request per client IP (10 req/s, burst 40, then `429` with `Retry-After`;
-  the first `X-Forwarded-For` entry is the client when a proxy sets it, else the peer);
-* caps open WebSocket connections at 64 (`503` past that) and `/api/events` at 2000 events per
-  call (ask again from the last `seq` when you got exactly 2000);
-* redacts every string in every response and WebSocket frame that looks like a URL, a
-  `user@host`, a `host:port` or a filesystem path — so no node address, credential,
-  `--replay` file name or devnet path leaves the server. Node ids stay.
+  the client is the peer, or behind `--trusted-proxies` the one `X-Forwarded-For` names); the
+  bucket table is bounded (4096, least recently seen evicted);
+* redacts every string in every response that looks like a URL, a `user@host`, a `host:port`
+  or a filesystem path — so no node address, credential, `--replay` file name or devnet path
+  leaves the server. Node ids stay.
 
-Whether or not `--public` is on, RPC credentials are never logged and an RPC error never
-carries the node's address (the client replaces it by `node <id>` before the error becomes a
-`note` event or a log line). `tests/hardening.rs` runs the binary with a password and a
-hostname that must not appear in `/api/health`, `/api/snapshot`, `/api/events`, the log or
-an export, and checks the `429`.
+`--public` or not, open WebSocket connections are capped at 64 (`503` past that), inbound
+WebSocket messages at 64 KiB, `/api/events` at 2000 events per call (ask again from the last
+`seq` when you got exactly 2000), `/ws` refuses a cross-origin browser, and WebSocket frames
+are redacted. RPC credentials are never logged and an RPC error never carries the node's
+address (the client replaces it by `node <id>` before the error becomes a `note` event or a
+log line); a `--nodes` URL that speaks plain `http://` to a non-loopback host logs a warning
+at start (the password travels in clear: use an ssh tunnel). `tests/hardening.rs` runs the
+binary with a password and a hostname that must not appear in `/api/health`, `/api/snapshot`,
+`/api/events`, `/ws`, the log or an export, and checks the `429`, the `X-Forwarded-For`
+rules, the `Origin` check and the refused bind.
 
 **A static copy** for a host with no server at all:
 
@@ -367,7 +385,10 @@ running instance and fails on a rising RSS, an uneven rate or RPC-failure notes.
 ## CI
 
 `.github/workflows/ci.yml`: `cargo fmt --check`, build, test and `clippy -D warnings` on
-Ubuntu and macOS with stable Rust on every push and pull request; a `v*` tag also builds
+Ubuntu and macOS with the pinned Rust release on every push and pull request, plus
+`cargo deny check` (`deny.toml`: RustSec advisories and yanked crates, licence allow-list,
+crates.io as the only source) and `cargo audit`; every action is pinned to a commit SHA and
+the workflow token is read-only except in the release job. A `v*` tag also builds
 release binaries for linux x86_64 and macOS arm64 and attaches them to the GitHub release. The
 node's nightly (`ycash-dd/.github/workflows/yellowback-tests.yml`) checks out and builds this
 repository and runs `qa/rpc-tests/yellowback_chainviz.py` against it on a 3-node regtest.
