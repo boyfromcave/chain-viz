@@ -681,7 +681,7 @@ impl Collector {
         let mut emitted = Vec::new();
         let prev = self.model.read().await.yed_info.get(&node).cloned();
         if let Some(prev) = &prev {
-            let fields: [(&str, Value, Value); 7] = [
+            let fields: [(&str, Value, Value); 8] = [
                 ("rejectedBlocks", prev.rejected_blocks.into(), info.rejected_blocks.into()),
                 ("suppressedBlocks", prev.suppressed_blocks.into(), info.suppressed_blocks.into()),
                 ("healthy", prev.healthy.into(), info.healthy.into()),
@@ -689,6 +689,7 @@ impl Collector {
                 ("valveTripped", prev.valve_tripped.into(), info.valve_tripped.into()),
                 ("sunset", prev.sunset.into(), info.sunset.into()),
                 ("abandoned", prev.abandoned.into(), info.abandoned.into()),
+                ("mintRequiresArmed", prev.mint_requires_armed.into(), info.mint_requires_armed.into()),
             ];
             for (field, from, to) in fields {
                 if from != to {

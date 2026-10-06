@@ -195,6 +195,45 @@ pub struct YellowbackSnapshot {
     pub attest_prices: BTreeMap<String, f64>,
     #[serde(rename = "haltBits")]
     pub halt_bits: Vec<&'static str>,
+    /// The NO_PRICE-hours counter over the last `NO_PRICE_WINDOW` blocks of the timeline.
+    #[serde(rename = "noPrice")]
+    pub no_price: NoPriceWindow,
+}
+
+/// The NO_PRICE counter's window: one day of blocks at Ycash's 75-second target spacing.
+pub const NO_PRICE_WINDOW: u64 = 1152;
+pub const BLOCK_SECONDS: u64 = 75;
+
+/// How long the NO_PRICE halt bit was set over the last `window` blocks of the timeline
+/// (`yed_gethistory` rows plus live `yed_getstats` rows, by height). `covered` is how many of the
+/// window's heights the timeline holds, so a young or partly backfilled timeline is not read as
+/// "always priced". `hours` is `blocks * BLOCK_SECONDS / 3600` (target spacing, not wall time).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct NoPriceWindow {
+    pub window: u64,
+    #[serde(rename = "fromHeight")]
+    pub from_height: Option<u64>,
+    #[serde(rename = "toHeight")]
+    pub to_height: Option<u64>,
+    pub covered: u64,
+    pub blocks: u64,
+    pub hours: f64,
+}
+
+pub fn no_price_window(history: &BTreeMap<u64, Value>, window: u64) -> NoPriceWindow {
+    let Some(top) = history.keys().next_back().copied() else {
+        return NoPriceWindow { window, from_height: None, to_height: None, covered: 0, blocks: 0, hours: 0.0 };
+    };
+    let from = top.saturating_sub(window.saturating_sub(1));
+    let (mut covered, mut blocks) = (0u64, 0u64);
+    for row in history.range(from..=top).map(|(_, r)| r) {
+        covered += 1;
+        let set = row.get("haltMask").and_then(Value::as_array).map(|m| m.iter().any(|b| b.as_str() == Some("NO_PRICE"))).unwrap_or(false);
+        if set {
+            blocks += 1;
+        }
+    }
+    NoPriceWindow { window, from_height: Some(from), to_height: Some(top), covered, blocks, hours: (blocks * BLOCK_SECONDS) as f64 / 3600.0 }
 }
 
 #[derive(Debug)]
@@ -513,6 +552,7 @@ impl YellowbackModel {
             mock_price: self.mock_price,
             attest_prices: self.attest_prices.clone(),
             halt_bits: HALT_BITS.to_vec(),
+            no_price: no_price_window(&self.history, NO_PRICE_WINDOW),
         }
     }
 }
@@ -579,6 +619,22 @@ mod tests {
         assert_eq!(m.history.len(), 2);
         assert!(m.vaults_stale(&stats(11, &[], 1)));
         assert!(m.on_stats("1", stats(11, &["DIVERGENCE"], 0), false).is_empty(), "follower, first sample");
+    }
+
+    #[test]
+    fn no_price_hours_over_the_window() {
+        let mut m = YellowbackModel::default();
+        assert_eq!(m.snapshot(None, &BTreeSet::new()).no_price.covered, 0);
+        // heights 1..=60: NO_PRICE on 11..=20 and 51..=60; a 48-block window sees 13..=60
+        for h in 1..=60u64 {
+            let halt: &[&str] = if (11..=20).contains(&h) || h > 50 { &["NO_PRICE", "DIVERGENCE"] } else { &[] };
+            m.on_stats("0", stats(h, halt, 0), true);
+        }
+        let w = no_price_window(&m.history, 48);
+        assert_eq!((w.from_height, w.to_height, w.covered, w.blocks), (Some(13), Some(60), 48, 18));
+        assert!((w.hours - 18.0 * 75.0 / 3600.0).abs() < 1e-9);
+        let day = m.snapshot(None, &BTreeSet::new()).no_price;
+        assert_eq!((day.window, day.covered, day.blocks), (NO_PRICE_WINDOW, 60, 20), "a young timeline: covered < window");
     }
 
     #[test]
