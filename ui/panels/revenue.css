@@ -35,5 +35,4 @@
 #panel-revenue .rv-hero { font-size: 32px; font-weight: 600; line-height: 1.1; margin-top: 4px; }
 #panel-revenue .sub { font-size: 12px; color: var(--ink-2); }
 #panel-revenue p { margin: 6px 0; font-size: 13px; }
-#panel-revenue .rv-verdict { font-size: 12px; color: var(--serious); margin: 4px 0; }
 @media (max-width: 800px) { #panel-revenue .rv-grid { grid-template-columns: 1fr; } }

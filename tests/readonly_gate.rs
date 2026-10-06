@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://www.opensource.org/licenses/mit-license.php .
 
-//! Plan §4.2: chain-viz never calls a writer. This gate greps `src/` for every forbidden RPC
+//! Plan §4.2 (and AGENTS.md rule 2 as the upgrade amends it): chain-viz never calls a writer. This gate greps `src/` for every forbidden RPC
 //! name; a match anywhere in the source (code, string, comment) fails the build. The recording
 //! script that made `tests/fixtures/*.json` used `generate`/`invalidateblock` on ONE devnet node
 //! and lives outside this repository on purpose.
@@ -46,6 +46,25 @@ const FORBIDDEN: &[&str] = &[
     "getnewaddress",
     "signrawtransaction",
     "createrawtransaction",
+    // the vault primitive's act and vault-spend RPCs (ycash-dd doc/vault-rpc.md, upgrade plan
+    // §15.8): chain-viz reads vault_getinfo / set_list / set_getinfo / vault_list /
+    // vault_decodescript only
+    "set_create",
+    "set_join",
+    "set_heartbeat",
+    "set_buildact",
+    "set_signact",
+    "set_sendact",
+    "set_equivocation",
+    "set_signunlock",
+    "set_signcancel",
+    "vault_lock",
+    "vault_buildunlock",
+    "vault_buildcancel",
+    "vault_send",
+    "vault_release",
+    "vault_ownerspend",
+    "vault_app",
 ];
 
 fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {

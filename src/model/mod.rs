@@ -5,4 +5,5 @@
 pub mod chain;
 pub mod mempool;
 pub mod revenue;
+pub mod vault;
 pub mod yellowback;

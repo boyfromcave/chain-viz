@@ -25,6 +25,7 @@ use crate::events::{now, EventKind};
 use crate::model::chain::{ChainModel, ChainSnapshot, Emitted};
 use crate::model::mempool::{MempoolModel, MempoolSnapshot};
 use crate::model::revenue::{usd, RevenueModel};
+use crate::model::vault::{VaultModel, VaultSnapshot, MAX_SET_DETAIL};
 use crate::model::yellowback::{BlockYb, YbTx, YellowbackModel, YellowbackSnapshot, HISTORY_PAGE, VAULT_PAGE};
 use crate::rpc::{Block, BlockFull, NodeConfig, RpcClient, RpcError, YedInfo};
 use crate::source::poll::PollSource;
@@ -51,6 +52,8 @@ pub struct NodeView {
     pub error: Option<String>,
     /// `yed_getinfo` works on this node (a stock node says `false`).
     pub yellowback: Option<bool>,
+    /// `vault_getinfo` works on this node (a node without the vault upgrade's RPCs says `false`).
+    pub vault: Option<bool>,
     #[serde(rename = "lastSeen")]
     pub last_seen: f64,
 }
@@ -69,6 +72,8 @@ pub struct Model {
     pub yellowback: YellowbackModel,
     /// The revenue ledger (C4).
     pub revenue: RevenueModel,
+    /// The vault primitive: sets, vaults, intents, spends, acts (P6).
+    pub vault: VaultModel,
 }
 
 #[derive(Serialize)]
@@ -88,6 +93,8 @@ pub struct Snapshot {
     pub yellowback: YellowbackSnapshot,
     /// Cumulative revenue rollups (`model/revenue.rs`), never evicted.
     pub revenue: Value,
+    /// The vault primitive (`model/vault.rs`).
+    pub vault: VaultSnapshot,
 }
 
 impl Model {
@@ -100,6 +107,10 @@ impl Model {
     /// eleven first polls elects one leader, not several.
     pub fn leader(&self) -> Option<String> {
         self.nodes.values().filter(|n| n.yellowback != Some(false) && n.error.is_none()).map(|n| n.id.clone()).min_by_key(|id| id.parse::<u64>().unwrap_or(u64::MAX))
+    }
+    /// The same election for the vault primitive's reads (`vault_*`/`set_*`, any upgraded node).
+    pub fn vault_leader(&self) -> Option<String> {
+        self.nodes.values().filter(|n| n.vault != Some(false) && n.error.is_none()).map(|n| n.id.clone()).min_by_key(|id| id.parse::<u64>().unwrap_or(u64::MAX))
     }
 
     pub fn snapshot(&self, seq: u64, blocks: usize) -> Snapshot {
@@ -116,6 +127,7 @@ impl Model {
             devnet: self.devnet.clone(),
             yellowback: self.yellowback.snapshot(self.leader(), &self.healthy()),
             revenue: self.revenue.snapshot(&|h| self.p_mint_at(h)),
+            vault: self.vault.snapshot(),
         }
     }
 
@@ -169,7 +181,8 @@ impl Collector {
         let names: Vec<String> = sources.iter().map(|s| s.name()).collect();
         {
             let mut m = self.model.write().await;
-            m.nodes.insert(node.clone(), NodeView { id: node.clone(), role: client.node().role.clone(), sources: names.clone(), up: false, error: None, yellowback: None, last_seen: 0.0 });
+            m.nodes
+                .insert(node.clone(), NodeView { id: node.clone(), role: client.node().role.clone(), sources: names.clone(), up: false, error: None, yellowback: None, vault: None, last_seen: 0.0 });
         }
         info!(node = %node, "sources: {}", names.join(", "));
         for s in sources {
@@ -198,6 +211,7 @@ impl Collector {
                         v.error = None;
                         v.last_seen = now();
                         v.yellowback = st.yed_enabled;
+                        v.vault = st.vault_enabled;
                     }
                     Err(e) => {
                         if v.up || v.error.is_none() {
@@ -269,7 +283,7 @@ impl Collector {
                 }
                 let moved = st.head.as_deref() != Some(&best);
                 st.head = Some(best.clone());
-                st.side_tips = tips.iter().filter(|t| t.status != "active").map(|t| t.hash.clone()).collect();
+                st.invalid_tips = tips.iter().filter(|t| t.status == "invalid").map(|t| t.hash.clone()).collect();
                 // Yellowback: classify every block's transactions locally, then (on a node with
                 // yed_*) one yed_gettag per block and one yed_gettxinfo per Yellowback tx.
                 for b in &full {
@@ -277,6 +291,9 @@ impl Collector {
                 }
                 if moved && st.yed_enabled == Some(true) {
                     self.on_block_yed(client, st, &best).await?;
+                }
+                if moved && st.vault_enabled != Some(false) {
+                    self.on_block_vault(client, st).await?;
                 }
             }
             if st.yed_enabled == Some(true) {
@@ -324,6 +341,9 @@ impl Collector {
                 }
                 info.yb = Some(BlockYb { txs, ..Default::default() });
             }
+            let ev = m.vault.on_block(b);
+            drop(m);
+            self.bus.publish_all(ev);
         }
         self.revenue_block(client, b).await?;
         if st.yed_enabled == Some(true) {
@@ -356,8 +376,7 @@ impl Collector {
             for t in &yb {
                 if let Some(tx) = m.yellowback.tx(t).cloned().filter(|t| t.info.is_some() && t.height == Some(b.height)) {
                     // enriched before this block was fetched here (another node's walk): attribute now
-                    let enforcing = m.yed_info.get(client.id()).map(|i| i.enforcing).unwrap_or(true);
-                    let more = m.revenue.on_yb_tx(b.height, &tx, enforcing);
+                    let more = m.revenue.on_yb_tx(b.height, &tx);
                     let _ = more;
                 }
             }
@@ -418,13 +437,12 @@ impl Collector {
         }
         // C4: the ledger rows of the tag (alias) and of each attributed transaction.
         {
-            let enforcing = m.yed_info.get(&node).map(|i| i.enforcing).unwrap_or(true);
             if let Some(tag) = m.chain.block(hash).and_then(|b| b.yb.as_ref()).and_then(|y| y.tag.clone()) {
                 m.revenue.on_tag(height, hash, &tag);
             }
             let mut rows = Vec::new();
             for t in &attributed {
-                rows.extend(m.revenue.on_yb_tx(height, t, enforcing));
+                rows.extend(m.revenue.on_yb_tx(height, t));
             }
             m.price_revenue(&mut rows);
             emitted.extend(rows);
@@ -566,7 +584,7 @@ impl Collector {
     }
 
     /// Per block on a node with `yed_*`: `yed_getstats` and `yed_getstatehash`; the leader
-    /// adds `yed_getprice`, `yed_getactivation`, `yed_listminers`, `yed_listattestors`,
+    /// adds `yed_getprice`, `yed_getactivation` (the upgrade object), `yed_listminers`, `yed_listattestors`,
     /// `yed_listclaimable`, `yed_listvaults` when the vault counts changed, and the one-time
     /// `yed_gethistory` backfill.
     async fn on_block_yed(&self, client: &RpcClient, st: &mut NodeState, best: &str) -> Result<(), RpcError> {
@@ -643,7 +661,10 @@ impl Collector {
         {
             let mut m = self.model.write().await;
             emitted.push(m.yellowback.on_price(&node, price));
-            m.yellowback.activation = Some(activation);
+            if !activation.attestor_set_id.is_empty() {
+                m.vault.attestor_set = Some(activation.attestor_set_id.clone());
+            }
+            m.yellowback.activation = serde_json::to_value(&activation).ok();
             m.yellowback.miners = miners;
             m.yellowback.claimable = claimable;
             emitted.extend(m.yellowback.on_attestors(&node, stats.height, attestors));
@@ -681,15 +702,10 @@ impl Collector {
         let mut emitted = Vec::new();
         let prev = self.model.read().await.yed_info.get(&node).cloned();
         if let Some(prev) = &prev {
-            let fields: [(&str, Value, Value); 8] = [
-                ("rejectedBlocks", prev.rejected_blocks.into(), info.rejected_blocks.into()),
-                ("suppressedBlocks", prev.suppressed_blocks.into(), info.suppressed_blocks.into()),
+            let fields: [(&str, Value, Value); 3] = [
                 ("healthy", prev.healthy.into(), info.healthy.into()),
-                ("enforcing", prev.enforcing.into(), info.enforcing.into()),
-                ("valveTripped", prev.valve_tripped.into(), info.valve_tripped.into()),
-                ("sunset", prev.sunset.into(), info.sunset.into()),
-                ("abandoned", prev.abandoned.into(), info.abandoned.into()),
                 ("mintRequiresArmed", prev.mint_requires_armed.into(), info.mint_requires_armed.into()),
+                ("rpcversion", prev.rpcversion.into(), info.rpcversion.into()),
             ];
             for (field, from, to) in fields {
                 if from != to {
@@ -697,33 +713,93 @@ impl Collector {
                 }
             }
         }
-        let rejected_grew = prev.as_ref().map(|p| info.rejected_blocks > p.rejected_blocks).unwrap_or(false);
         {
             let mut m = self.model.write().await;
             emitted.extend(m.yellowback.on_info(&node, prev.as_ref(), &info));
-            m.yed_info.insert(node.clone(), info.clone());
-        }
-        if rejected_grew {
-            // Ask the verdict of every side tip this node holds that we have not asked about.
-            let tips: Vec<String> = st.side_tips.iter().filter(|h| !st.verdicts.contains(*h)).cloned().collect();
-            for hash in tips {
-                match client.yed_getblockverdict(&hash).await {
-                    Ok(v) => {
-                        st.verdicts.insert(hash.clone());
-                        if v.block_invalid {
-                            let verdict = serde_json::to_value(&v).unwrap_or(Value::Null);
-                            let mut m = self.model.write().await;
-                            let height = m.chain.block(&hash).map(|b| b.height);
-                            if let Some(b) = m.chain.block_mut(&hash) {
-                                b.yb.get_or_insert_with(BlockYb::default).rejected = true;
-                            }
-                            m.yellowback.note_rejected(&hash, &node, verdict.clone());
-                            emitted.push(Emitted { height, node: Some(node.clone()), kind: EventKind::RejectedBlock { hash, verdict } });
-                        }
-                    }
-                    Err(e) => warn!(node = %node, "yed_getblockverdict {}: {}", short(&hash), e),
+            if let Some(set) = info.upgrade.as_ref().map(|u| u.attestor_set_id.clone()).filter(|s| !s.is_empty()) {
+                if m.leader().as_deref() == Some(node.as_str()) || m.vault.attestor_set.is_none() {
+                    m.vault.attestor_set = Some(set);
                 }
             }
+            m.yed_info.insert(node.clone(), info.clone());
+        }
+        // rpcversion 5: a YED-invalid block is refused by consensus, so it shows up as a side tip
+        // `getchaintips` calls `invalid`; ask its verdict once (the counters of the enforcement
+        // era are gone). A tip invalid for another reason answers `blockInvalid: false`.
+        let tips: Vec<String> = st.invalid_tips.iter().filter(|h| !st.verdicts.contains(*h)).cloned().collect();
+        for hash in tips {
+            st.verdicts.insert(hash.clone());
+            match client.yed_getblockverdict(&hash).await {
+                Ok(v) => {
+                    if v.block_invalid {
+                        let verdict = serde_json::to_value(&v).unwrap_or(Value::Null);
+                        let mut m = self.model.write().await;
+                        let height = m.chain.block(&hash).map(|b| b.height);
+                        if let Some(b) = m.chain.block_mut(&hash) {
+                            b.yb.get_or_insert_with(BlockYb::default).rejected = true;
+                        }
+                        m.yellowback.note_rejected(&hash, &node, verdict.clone());
+                        emitted.push(Emitted { height, node: Some(node.clone()), kind: EventKind::RejectedBlock { hash, verdict } });
+                    }
+                }
+                Err(e @ RpcError::Node { .. }) => debug!(node = %node, "yed_getblockverdict {}: {}", short(&hash), e),
+                Err(e) => return Err(e),
+            }
+        }
+        self.bus.publish_all(emitted);
+        Ok(())
+    }
+
+    /// Per block, on the vault leader: `vault_getinfo`, `set_list` and `set_getinfo` per set (at
+    /// most `MAX_SET_DETAIL`; set and member predicates move with the height), and `vault_list`
+    /// when `statehash` moved. A node without the RPCs (method not found) is never asked again.
+    async fn on_block_vault(&self, client: &RpcClient, st: &mut NodeState) -> Result<(), RpcError> {
+        let node = client.id().to_string();
+        if st.vault_enabled.is_none() {
+            match client.vault_getinfo().await {
+                Ok(_) => st.vault_enabled = Some(true),
+                Err(e) if e.is_method_not_found() => {
+                    st.vault_enabled = Some(false);
+                    let mut m = self.model.write().await;
+                    if let Some(v) = m.nodes.get_mut(&node) {
+                        v.vault = Some(false);
+                    }
+                    if m.nodes.values().all(|n| n.vault == Some(false)) {
+                        m.vault.available = Some(false);
+                    }
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            }
+            if let Some(v) = self.model.write().await.nodes.get_mut(&node) {
+                v.vault = Some(true);
+            }
+        }
+        if self.model.read().await.vault_leader().as_deref() != Some(node.as_str()) {
+            return Ok(());
+        }
+        let info = client.vault_getinfo().await?;
+        let height = info.height;
+        let statehash = info.statehash.clone();
+        let stale = self.model.write().await.vault.on_info(info);
+        let list = client.set_list().await?;
+        let mut sets = Vec::with_capacity(list.len());
+        for (i, row) in list.into_iter().enumerate() {
+            let id = row.get("setid").and_then(Value::as_str).unwrap_or("").to_string();
+            if i < MAX_SET_DETAIL && !id.is_empty() {
+                match client.set_getinfo(&id).await {
+                    Ok(full) => sets.push(full),
+                    Err(RpcError::Node { .. }) => sets.push(row),
+                    Err(e) => return Err(e),
+                }
+            } else {
+                sets.push(row);
+            }
+        }
+        let mut emitted = self.model.write().await.vault.on_sets(height, sets);
+        if stale {
+            let rows = client.vault_list().await?;
+            emitted.extend(self.model.write().await.vault.on_list(height, &statehash, rows));
         }
         self.bus.publish_all(emitted);
         Ok(())
@@ -808,8 +884,11 @@ struct NodeState {
     head: Option<String>,
     ticks: u64,
     yed_enabled: Option<bool>,
-    side_tips: Vec<String>,
+    /// Side tips `getchaintips` calls `invalid` (a refused block; rpcversion 5: YED-invalid is one).
+    invalid_tips: Vec<String>,
     verdicts: HashSet<String>,
+    /// `vault_getinfo` answers on this node (`None` until asked).
+    vault_enabled: Option<bool>,
     /// Blocks this node ran the per-block `yed_*` reads for.
     yed_blocks: u64,
 }

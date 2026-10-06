@@ -15,9 +15,10 @@ const yec = (zat) => (zat === null || zat === undefined ? '–' : (zat / 1e8).to
 const yed = (cents) => (cents === null || cents === undefined ? '–' : (cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }));
 const pct = (bps) => (bps === null || bps === undefined ? '–' : `${(bps / 100).toFixed(1)} %`);
 // Payload / TxLog type names as the node spells them (PayloadTypeName, src/yellowback/payload.cpp).
-const TYPE_SLOT = { mint: 's1', transfer: 's3', redeem: 's2', register: 's4', notice: 's6', equivocation: 's8', revive: 's5' };
+// rpcversion 5 adds claim_release / claim_cancel (the claim intent's two ends) and set_act (an attestor's heartbeat, removal or set equivocation).
+const TYPE_SLOT = { mint: 's1', transfer: 's3', redeem: 's2', register: 's4', notice: 's6', equivocation: 's8', revive: 's5', claim_release: 's7', claim_cancel: 's5', set_act: 's4' };
 const typeColour = (t, path) => `var(--${t === 'redeem' && path === 'claim' ? 's7' : TYPE_SLOT[t] || 's6'})`;
-const typeLabel = (t) => ({ mint: 'MINT', transfer: 'SEND', redeem: 'REDEEM', register: 'ATTESTOR', notice: 'NOTICE', equivocation: 'EQUIVOCATION', revive: 'REVIVE' }[t.tx_type || t.type] || (t.type || '').toUpperCase());
+const typeLabel = (t) => ({ mint: 'MINT', transfer: 'SEND', redeem: 'REDEEM', register: 'ATTESTOR', notice: 'NOTICE', equivocation: 'EQUIVOCATION', revive: 'REVIVE', claim_release: 'CLAIM RELEASE', claim_cancel: 'CLAIM CANCELLED', set_act: 'SET ACT' }[t.tx_type || t.type] || (t.type || '').toUpperCase());
 const txLabel = (t) => (t.type === 'redeem' && t.path === 'claim' ? 'CLAIM' : typeLabel(t));
 
 let local = { data: null, fetchedSeq: -1, fetchedHeight: -1, seenSeq: 0, arming: [], mock: [] };   // this panel's own state
@@ -38,12 +39,12 @@ export function init() {
     h('div', { id: 'yb-ribbon', class: 'yb-ribbon' }),
     h('div', { id: 'yb-alarm', class: 'yb-alarm', hidden: true }),
     h('div', { class: 'yb-grid' },
-      h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Timeline'), h('span', { class: 'hint' }, 'x = height · activation, arming, and one lane per halt-mask bit (filled = set)'), svg('svg', { id: 'yb-lanes', class: 'plot', role: 'img', 'aria-label': 'state lanes' })),
+      h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Timeline'), h('span', { class: 'hint' }, 'x = height · the vault upgrade, arming, and one lane per halt-mask bit (filled = set)'), svg('svg', { id: 'yb-lanes', class: 'plot', role: 'img', 'aria-label': 'state lanes' })),
       h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Prices'), h('span', { class: 'hint' }, 'pFast / pMid / pSlow lines · pMint–pClaim band · fed price dotted (devnet mock-price)'), svg('svg', { id: 'yb-prices', class: 'plot', role: 'img', 'aria-label': 'price windows' }), h('div', { id: 'yb-price-legend', class: 'legend' }), h('div', { id: 'yb-fill', class: 'yb-fill' })),
       h('div', { class: 'yb-card' }, h('h3', {}, 'Supply and collateral'), h('div', { id: 'yb-supply-tiles', class: 'tiles' }), svg('svg', { id: 'yb-ratio', class: 'plot', role: 'img', 'aria-label': 'global ratio' }), h('div', { class: 'hint' }, 'global ratio (collateral ÷ supply at pClaim) vs the 110 % claim and 105 % emergency lines · bars: net supply change per block')),
       h('div', { class: 'yb-card' }, h('h3', {}, 'Vaults'), h('div', { id: 'yb-vault-tiles', class: 'tiles' }), svg('svg', { id: 'yb-vaults', class: 'plot', role: 'img', 'aria-label': 'vault scatter' }), h('div', { id: 'yb-vault-legend', class: 'legend' })),
       h('div', { class: 'yb-card' }, h('h3', {}, 'Attestors'), h('table', { id: 'yb-attestors', class: 'table' })),
-      h('div', { class: 'yb-card' }, h('h3', {}, 'Consistency and enforcement'), h('div', { id: 'yb-consistency' })),
+      h('div', { class: 'yb-card' }, h('h3', {}, 'Consistency'), h('div', { id: 'yb-consistency' })),
       h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Yellowback transactions'), h('span', { class: 'hint' }, 'newest first · mempool rows carry the dry-run verdict (yed_validaterawtransaction)'), h('table', { id: 'yb-txs', class: 'table' }))),
   );
   if (main) main.append(section); else registerIds(section);
@@ -88,25 +89,22 @@ export function render({ store, now }) {
 function pill(label, on, level) { return h('span', { class: 'yb-pill', 'data-on': on ? '1' : '0', 'data-level': level || '' }, h('i'), label); }
 function renderRibbon(y, info, stats, d) {
   const el = clear($('yb-ribbon')); if (!info) { el.append(h('span', { class: 'hint' }, 'no node with yed_getinfo')); return; }
-  const act = info.activation || {}, att = info.attest || {};
-  const suspended = !!stats?.haltMask?.includes('ENFORCEMENT');
-  el.append(
+  const up = info.upgrade, att = info.attest || {};
+  // rpcversion 5: YED is the vault upgrade's rule module (consensus from activationHeight); the
+  // enforcement / valve / sunset / abandonment / signalling state of v3 is gone (upgrade plan §6).
+  const versions = [...new Set(Object.values(d.yedInfo || {}).map((i) => i.rpcversion))];
+  el.append(...[
     pill(info.healthy ? 'healthy' : `unhealthy ${info.unhealthyReason || ''}`, info.healthy, info.healthy ? 'good' : 'critical'),
-    // ACT-6: the ENFORCEMENT halt bit means EnforcementOn() is false at block level even while
-    // yed_getinfo.enforcing (the node's own switch) stays true — a burn-less vault spend would be
-    // accepted for as long as it lasts, so it outranks the node flag (plan finding C-F34).
-    suspended ? pill('enforcement SUSPENDED (ACT-6)', true, 'critical')
-              : pill(info.enforcing ? 'enforcing' : 'not enforcing', info.enforcing, info.enforcing ? 'good' : 'warning'),
-    pill('valve tripped', info.valveTripped, 'critical'), pill('sunset', info.sunset, 'warning'), pill('abandoned', info.abandoned, 'critical'),
-    // rpcversion 4 (hardening H-1): with mintRequiresArmed a mint at an unarmed R confirms VOID (mint-halted-unarmed)
+    // rpcversion 4 (hardening H-1): with mintRequiresArmed a mint at an unarmed R is invalid (mint-halted-unarmed)
     pill(info.mintRequiresArmed ? 'mint requires ARMED' : 'mint without ARMED', !!info.mintRequiresArmed, 'good'),
+    versions.length === 1 && versions[0] === 5 ? null : pill(`rpcversion ${versions.join('/')} (chain-viz models 5)`, true, 'warning'),
     h('span', { class: 'yb-sep' }),
-    h('span', { class: 'yb-state' }, h('b', {}, 'activation'), ` ${(act.status || '?').toUpperCase()} `, h('span', { class: 'muted' }, `${act.signalCount ?? '–'}/${act.window ?? '–'} signals · lock-in ${act.lockInHeight ?? '–'} · active ${act.activateHeight ?? '–'}`)),
+    h('span', { class: 'yb-state' }, h('b', {}, 'upgrade'), up ? ` ${up.name} ${(up.status || '?').toUpperCase()} ` : ' – ', h('span', { class: 'muted' }, up ? `branch ${up.branchId} · from ${up.activationHeight} · claim delay ${up.claimDelay} · attestor set ${(up.attestorSetId || '–').slice(0, 10)}…` : 'no upgrade object (a node before rpcversion 5)')),
     h('span', { class: 'yb-state' }, h('b', {}, 'arming'), ` ${att.status || '?'} `, h('span', { class: 'muted' }, `${att.seatedCount ?? '–'} seated · pool ${att.poolSize ?? '–'} (fresh ${att.poolFresh ?? '–'}) · trigger ${att.triggerHeight ?? '–'} · arm ${att.armHeight ?? '–'}`)),
     h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, mintingWhy(info, stats))),
     noPriceState(y.noPrice),
     h('span', { class: 'yb-state' }, h('b', {}, 'index'), ` ${info.height ?? '–'}`, h('span', { class: 'muted' }, ` of ${info.chainHeight ?? '–'} · leader node ${y.leader ?? '–'}`)),
-  );
+  ].filter(Boolean));
   const alarm = $('yb-alarm');
   if (y.statehash_agree === false) { alarm.hidden = false; clear(alarm).append(h('b', {}, 'STATE HASH MISMATCH'), ` healthy nodes on the same tip disagree on yed_getstatehash: `, ...Object.entries(y.statehash).map(([n, v]) => h('code', {}, `${n}:${v.statehash.slice(0, 10)} `))); }
   else alarm.hidden = true;
@@ -130,11 +128,10 @@ function noPriceState(np) {
 }
 // The node's verdict ids worth a sentence in the transaction table's tooltip.
 const VERDICT_TEXT = {
-  'mint-halted-unarmed': 'VOID: the mint\'s reference height was not ARMED while mintRequiresArmed (hardening H-1, MINT-4)',
-  'mint-halted-no-price': 'VOID: no price at the reference height (MINT-4)',
-  'mint-halted-participation': 'VOID: participation or enforcement halt at the reference height (MINT-4)',
-  'mint-halted-global-ratio': 'VOID: global-ratio halt and the class minimum is below the recapitalisation floor (MINT-4)',
-  'mint-halted-divergence': 'VOID: price divergence halt at the reference height (MINT-4)',
+  'mint-halted-unarmed': 'invalid: the mint\'s reference height was not ARMED while mintRequiresArmed (hardening H-1, MINT-4)',
+  'mint-halted-no-price': 'invalid: no price at the reference height (MINT-4)',
+  'mint-halted-global-ratio': 'invalid: global-ratio halt and the class minimum is below the recapitalisation floor (MINT-4)',
+  'mint-halted-divergence': 'invalid: price divergence halt at the reference height (MINT-4)',
 };
 
 // ---------------------------------------------------------------- timeline lanes
@@ -148,19 +145,17 @@ function heightAxis(el, rows, x, W, H) {
 function renderLanes(y, info, d) {
   const el = clear($('yb-lanes')); const rows = y.history || []; if (rows.length < 2) { el.append(svg('text', { class: 'empty', x: 20, y: 20 }, 'timeline: waiting for yed_gethistory')); return; }
   const bits = y.haltBits || [];
-  const lanes = ['activation', 'arming', ...bits];
+  const lanes = ['upgrade', 'arming', ...bits];
   const LH = 14, W = el.clientWidth || 800, H = LM.t + lanes.length * LH + LM.b;
   el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.style.height = `${H}px`;
   const x = xScale(rows, W);
   lanes.forEach((name, i) => el.append(svg('text', { class: 'tick', x: LM.l - 6, y: LM.t + i * LH + 10, 'text-anchor': 'end' }, name)));
   const dx = Math.max(1, (W - LM.l - LM.r) / (rows.length - 1));
-  // activation lane: colour by status
-  const actColour = { signaling: 'var(--s4)', locked_in: 'var(--s2)', active: 'var(--good)' };
-  // live rows (from yed_getstats, `live: true`) carry no activation field: carry the last known status forward
-  let lastAct = null;
+  // upgrade lane: active from yed_getinfo.upgrade.activationHeight (U-22), pending before
+  const actH = info?.upgrade?.activationHeight;
   for (const r of rows) {
-    const st = r.activation?.status || lastAct; lastAct = st;
-    el.append(svg('rect', { x: x(r.height) - dx / 2, y: LM.t + 1, width: dx + 0.5, height: LH - 3, fill: actColour[st] || 'var(--mark)', 'fill-opacity': st === 'active' ? 0.55 : 0.85 }));
+    const on = actH !== undefined && actH !== null && r.height >= actH;
+    el.append(svg('rect', { x: x(r.height) - dx / 2, y: LM.t + 1, width: dx + 0.5, height: LH - 3, fill: on ? 'var(--good)' : 'var(--mark)', 'fill-opacity': on ? 0.55 : 0.85 }));
   }
   // arming lane: current status back to the first known change (yb_state events); before that, unknown = hatched
   const armColour = { UNARMED: 'var(--mark)', TRIGGERED: 'var(--s4)', ARMED: 'var(--good)' };
@@ -177,9 +172,9 @@ function renderLanes(y, info, d) {
   });
   for (let i = 1; i < lanes.length; i++) el.append(svg('line', { class: 'gridline', x1: LM.l, x2: W - LM.r, y1: LM.t + i * LH - 1, y2: LM.t + i * LH - 1 }));
   heightAxis(el, rows, x, W, H);
-  // rejected blocks as ticks under the lanes
+  // refused (YED-invalid) blocks as ticks under the lanes
   for (const r of y.rejected || []) { const b = (d.blocks || []).find((bb) => bb.hash === r.hash); if (b) el.append(svg('line', { class: 'yb-rejected', x1: x(b.height), x2: x(b.height), y1: LM.t, y2: H - LM.b })); }
-  hoverRows(el, rows, x, W, H, (r) => `height ${r.height}\nactivation ${r.activation?.status || '–'} (${r.signalCount ?? '–'} signals)\nhaltMask ${(r.haltMask || []).join(' ') || 'none'}\ntagged ${r.tagged ?? '–'} quote ${r.quote ?? '–'}`);
+  hoverRows(el, rows, x, W, H, (r) => `height ${r.height}\nupgrade ${actH !== undefined && actH !== null ? (r.height >= actH ? 'active' : 'pending') : '–'}\nhaltMask ${(r.haltMask || []).join(' ') || 'none'}\ntagged ${r.tagged ?? '–'} quote ${r.quote ?? '–'}`);
 }
 function hoverRows(el, rows, x, W, H, text) {
   const hit = svg('rect', { x: LM.l, y: 0, width: W - LM.l - LM.r, height: H, fill: 'transparent' });
@@ -274,7 +269,11 @@ function renderSupply(y, stats) {
 // ---------------------------------------------------------------- vault scatter
 function renderVaults(y, stats, d) {
   const tiles = clear($('yb-vault-tiles')); if (!stats) return;
-  tiles.append(tile('active', fmtInt(stats.activeVaults)), tile('claimable', fmtInt((y.claimable || []).length), '', (y.claimable || []).length > 0), tile('void', fmtInt(stats.voidVaults), voidSub(y)), tile('closed', fmtInt(stats.closedVaults)), tile('claimed', fmtInt(stats.claimedVaults)));
+  // rpcversion 5: a claim is an intent (status CLAIMING until released or cancelled); no VOID vault
+  // is produced after the upgrade, so the void tile shows only when an older one is listed.
+  const claiming = (y.vaults || []).filter((v) => v.status === 'CLAIMING').length;
+  tiles.append(tile('active', fmtInt(stats.activeVaults)), tile('claiming', fmtInt(claiming), 'claim intents pending', claiming > 0), tile('claimable', fmtInt((y.claimable || []).length), '', (y.claimable || []).length > 0), tile('closed', fmtInt(stats.closedVaults)), tile('claimed', fmtInt(stats.claimedVaults)));
+  if (stats.voidVaults > 0) tiles.append(tile('void', fmtInt(stats.voidVaults), voidSub(y)));
   const el = clear($('yb-vaults')); const tip = d.tip?.height ?? stats.height, pClaim = stats.pClaim;
   const claimable = new Set((y.claimable || []).map((c) => c.vault));
   const vs = (y.vaults || []).filter((v) => v.status === 'ACTIVE' && v.mintedCents > 0 && v.collateralZat > 0).map((v) => ({ v, ratio: (v.collateralZat * pClaim) / (v.mintedCents * 1e8), toClaim: v.claimHeight - tip, key: `${v.txid}:${v.vout}` }));
@@ -324,9 +323,9 @@ function renderConsistency(y, d) {
   const byHash = {}; for (const [n, v] of nodes) (byHash[v.statehash] ??= []).push(`${n}@${v.height}`);
   for (const [hsh, ns] of Object.entries(byHash)) el.append(h('div', { class: 'mono' }, h('code', {}, hsh.slice(0, 16) + '…'), ' ', ns.join(' ')));
   const infos = Object.entries(d.yedInfo || {});
-  const rej = infos.reduce((a, [, i]) => a + (i.rejectedBlocks || 0), 0), sup = infos.reduce((a, [, i]) => a + (i.suppressedBlocks || 0), 0);
-  el.append(h('div', { class: 'tiles' }, tile('rejected blocks', String(rej), 'sum over nodes', rej > 0), tile('suppressed', String(sup), 'sum over nodes', sup > 0), tile('quoting pools', String((y.miners || []).length), (y.miners || []).filter((m) => m.eligible).length + ' eligible')));
-  for (const r of y.rejected || []) el.append(h('div', { class: 'mono yb-verdict' }, `node ${r.node} rejected ${r.hash.slice(0, 12)}…: ${r.verdict?.reason || JSON.stringify(r.verdict)}`));
+  const rej = (y.rejected || []).length;
+  el.append(h('div', { class: 'tiles' }, tile('refused blocks', String(rej), 'YED-invalid (yed_getblockverdict on an invalid tip)', rej > 0), tile('quoting pools', String((y.miners || []).length), (y.miners || []).filter((m) => m.eligible).length + ' eligible')));
+  for (const r of y.rejected || []) el.append(h('div', { class: 'mono yb-verdict' }, `node ${r.node} refused ${r.hash.slice(0, 12)}…: ${r.verdict?.reason || r.verdict?.verdict || JSON.stringify(r.verdict)}`));
   const unhealthy = infos.filter(([, i]) => !i.healthy);
   for (const [n, i] of unhealthy) el.append(h('div', { class: 'yb-verdict' }, `node ${n} unhealthy: ${i.unhealthyReason || ''}`));
 }

@@ -5,13 +5,13 @@
 // Chain panel (plan §3.2.1): block DAG newest-right (main row on top, side/orphaned blocks hanging
 // below their fork point), per-node head chips with disagreement highlighted, reorg log, and the
 // three derived risk gauges: fork = disagreeing nodes × seconds disagreeing; orphan = extra blocks
-// at duplicate heights in the last window; reorg = deepest side branch within the work-valve depth (6).
+// at duplicate heights in the last window; reorg = deepest side branch, on a scale of 6 blocks.
 import { h, svg, clear, short, fmtInt, fmtBytes, fmtSecs, fmtTime, tooltip } from '../lib.js';
 import { spacing } from './header.js';
 
 const COL = 104, ROW = 74, BW = 92, BH = 58, PAD = 12;
 const WINDOW = 20;            // heights considered by the orphan gauge
-const VALVE_DEPTH = 6;        // index.cpp:575-600, the work-valve depth
+const REORG_SCALE = 6;        // the reorg gauge's full scale, in blocks (the v3 work valve that set it is retired, upgrade plan §6)
 const $ = (id) => document.getElementById(id);
 let lastKey = '';
 
@@ -89,7 +89,7 @@ function renderDag({ store }) {
     g.append(svg('text', { x: 6, y: 14, 'font-weight': 600 }, String(n.b.height)));
     g.append(svg('text', { class: 'hash', x: BW - 6, y: 14, 'text-anchor': 'end' }, short(n.b.hash)));
     g.append(svg('text', { class: 'meta', x: 6, y: 28 }, `${n.b.txCount ?? '?'} tx · ${fmtBytes(n.b.size)}`));
-    // Badge row: miner (from the tag's payoutKey or coinbase, C3 supplies `miner`), tag price/signal, or placeholders.
+    // Badge row: miner (from the tag's payoutKey or coinbase, C3 supplies `miner`), tag price, or placeholders.
     let bx = 6;
     const badge = (text, cls) => {
       const w = Math.max(18, text.length * 5.6 + 8);
@@ -100,9 +100,9 @@ function renderDag({ store }) {
     const miner = n.b.miner || n.b.yb?.miner;
     const tag = n.b.tag || n.b.yb?.tag;
     badge(miner ? String(miner).slice(0, 8) : 'miner ?', 'miner-bg');
-    if (tag) badge(`$${(tag.priceMicroUsd / 1e6).toFixed(3)}${tag.signal ? ' ↑' : ''}`, 'badge-bg');
+    if (tag) badge(`$${(tag.priceMicroUsd / 1e6).toFixed(3)}`, 'badge-bg');
     else badge('no tag', 'badge-bg');
-    tooltip(g, () => `height ${n.b.height}  ${n.b.status}${n.b.sideStatus ? ' (' + n.b.sideStatus + ', branchlen ' + n.b.branchlen + ')' : ''}\n${n.b.hash}\nprev ${n.b.prev || '?'}\n${n.b.txCount} tx, ${fmtBytes(n.b.size)}\ntime ${fmtTime(n.b.time)}  seen ${n.b.seen ? fmtTime(n.b.seen) : '?'}\nnodes: ${(n.b.nodes || []).join(', ') || '–'}${miner ? '\nminer ' + miner : ''}${tag ? '\ntag price $' + tag.priceMicroUsd / 1e6 + ' signal ' + tag.signal : ''}${n.b.rejected ? '\nREJECTED by an enforcing node' : ''}`);
+    tooltip(g, () => `height ${n.b.height}  ${n.b.status}${n.b.sideStatus ? ' (' + n.b.sideStatus + ', branchlen ' + n.b.branchlen + ')' : ''}\n${n.b.hash}\nprev ${n.b.prev || '?'}\n${n.b.txCount} tx, ${fmtBytes(n.b.size)}\ntime ${fmtTime(n.b.time)}  seen ${n.b.seen ? fmtTime(n.b.seen) : '?'}\nnodes: ${(n.b.nodes || []).join(', ') || '–'}${miner ? '\nminer ' + miner : ''}${tag ? '\ntag price $' + tag.priceMicroUsd / 1e6 : ''}${n.b.rejected ? '\nREFUSED: YED-invalid (yed_getblockverdict)' : ''}`);
     boxes.append(g);
   }
   el.append(edges, boxes);
@@ -132,11 +132,10 @@ function renderGauges({ store, majority, now }) {
   for (const b of [...s.chain.main, ...s.chain.side]) if (b.height > tipH - WINDOW) count.set(b.height, (count.get(b.height) || 0) + 1);
   const dup = [...count.values()].reduce((a, c) => a + Math.max(0, c - 1), 0);
   el.append(gauge('orphan risk', String(dup), `competing blocks in the last ${WINDOW} heights`, dup / 5, dup === 0 ? 0 : dup >= 3 ? 2 : 1));
-  // reorg risk = deepest side branch within the valve depth, with the valve state overlaid
+  // reorg risk = deepest side branch within the gauge's scale
   let deepest = 0;
-  for (const tips of Object.values(s.chain.tips || {})) for (const t of tips) if (t.status !== 'active' && t.branchlen > 0 && t.branchlen <= VALVE_DEPTH) deepest = Math.max(deepest, t.branchlen);
-  const valve = Object.values(s.yedInfo || {}).some((i) => i && (i.valveTripped === true || i.state === 'valveTripped'));
-  el.append(gauge('reorg risk', `${deepest} / ${VALVE_DEPTH}`, valve ? 'work valve TRIPPED' : `deepest side branch ≤ valve depth${valve === false ? '' : ''}`, deepest / VALVE_DEPTH, valve ? 2 : deepest >= 3 ? 2 : deepest > 0 ? 1 : 0));
+  for (const tips of Object.values(s.chain.tips || {})) for (const t of tips) if (t.status !== 'active' && t.branchlen > 0 && t.branchlen <= REORG_SCALE) deepest = Math.max(deepest, t.branchlen);
+  el.append(gauge('reorg risk', `${deepest} / ${REORG_SCALE}`, `deepest side branch within ${REORG_SCALE} blocks`, deepest / REORG_SCALE, deepest >= 3 ? 2 : deepest > 0 ? 1 : 0));
 }
 
 function renderReorgs({ store }) {

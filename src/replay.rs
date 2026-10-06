@@ -52,7 +52,16 @@ pub fn apply(model: &mut Model, e: &Event) {
                 model.chain_name = chain.clone();
             }
             for id in nodes {
-                model.nodes.entry(id.clone()).or_insert_with(|| NodeView { id: id.clone(), role: None, sources: vec!["replay".into()], up: true, error: None, yellowback: None, last_seen: e.ts });
+                model.nodes.entry(id.clone()).or_insert_with(|| NodeView {
+                    id: id.clone(),
+                    role: None,
+                    sources: vec!["replay".into()],
+                    up: true,
+                    error: None,
+                    yellowback: None,
+                    vault: None,
+                    last_seen: e.ts,
+                });
             }
         }
         EventKind::Block(b) => {
@@ -97,7 +106,7 @@ pub fn apply(model: &mut Model, e: &Event) {
     }
     if let Some(n) = node {
         if !model.nodes.contains_key(n) {
-            model.nodes.insert(n.to_string(), NodeView { id: n.to_string(), role: None, sources: vec!["replay".into()], up: true, error: None, yellowback: None, last_seen: e.ts });
+            model.nodes.insert(n.to_string(), NodeView { id: n.to_string(), role: None, sources: vec!["replay".into()], up: true, error: None, yellowback: None, vault: None, last_seen: e.ts });
         }
     }
 }

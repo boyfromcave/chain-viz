@@ -13,6 +13,7 @@ import * as mempool from './panels/mempool.js';
 import * as events from './panels/events.js';
 import * as health from './panels/health.js';
 import * as revenue from './panels/revenue.js';
+import * as vaults from './panels/vaults.js';
 
 export const store = {
   snap: null,            // last /api/snapshot (chain, mempool, nodes, devnet, yedInfo)
@@ -20,13 +21,13 @@ export const store = {
   conn: 'connecting',    // connecting | open | reconnecting | closed | static (an --export copy)
   events: [],            // tail of the event stream (newest last), ≤ MAX_EVENTS
   reorgs: [],            // reorg events, newest first
-  rejected: new Set(),   // block hashes some node rejected
+  rejected: new Set(),   // block hashes some node refused as YED-invalid
   disagreeSince: {},     // node id → wall-clock when it last started disagreeing
   yb: {},                // txid → yb fields seen in yb_tx events (mempool colouring)
   dirty: true,
 };
 const MAX_EVENTS = 500;
-const panels = [header, chain, mempool, events, health, revenue];
+const panels = [header, chain, mempool, events, health, vaults, revenue];
 
 // ---------------------------------------------------------------- incremental apply
 function findBlock(hash) {

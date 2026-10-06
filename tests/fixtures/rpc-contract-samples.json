@@ -1,8 +1,255 @@
 {
- "_source": "ycash-dd/doc/yellowback-rpc-contract.json rpcversion 4, the \"returns\" samples",
+ "_source": "ycash-dd upgrade/vault doc/yellowback-rpc-contract.json rpcversion 5, the \"returns\" samples (yed_*); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md)",
+ "set_getinfo": {
+  "active": 1,
+  "admitkey": "02c3ac780b7c19de91e8a70b6c80a168fc7cd32b326aef9c677f5c98157e78fb7d",
+  "bondlockmin": 0,
+  "bondmin": 1.0,
+  "cancelthreshold": 1,
+  "createheight": 201,
+  "current": 1,
+  "dormant": false,
+  "epoch": 12,
+  "epochbasis": 10.0,
+  "epochused": 2.5,
+  "height": 244,
+  "livenesswindow": 50,
+  "lockedvalue": 9.0,
+  "maturity": 0,
+  "memberlist": [
+   {
+    "bondfrozen": false,
+    "bondlocktime": 501,
+    "bondoutpoint": "9e801db019182322c0a0787425395b0451cb201948fb0a8319e7bf096ab10ab8:0",
+    "bondvalue": 1.0,
+    "current": true,
+    "joinheight": 202,
+    "key": "02875b1350292608b015aa56ebb4e9eabbe4bedcfacd32cf51f10a68b4f5dd93b2",
+    "lastact": 203,
+    "live": true,
+    "status": "active",
+    "wallet": true
+   }
+  ],
+  "members": 1,
+  "open": false,
+  "ratelimitbps": 5000,
+  "ratewindow": 20,
+  "released": false,
+  "seats": 3,
+  "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+  "slashthreshold": 1,
+  "unlockavailable": 2.5,
+  "unlockthreshold": 1,
+  "winddownheight": 0
+ },
+ "set_list": [
+  {
+   "active": 3,
+   "admitkey": "0235ac77c064da8dd9898b96454028b64b4f9033124da04a875377e86a0394a5bf",
+   "bondlockmin": 200,
+   "bondmin": 10.0,
+   "cancelthreshold": 1,
+   "createheight": 104,
+   "current": 3,
+   "dormant": false,
+   "epoch": 0,
+   "epochbasis": 0.0,
+   "epochused": 0.0,
+   "height": 244,
+   "livenesswindow": 1000,
+   "lockedvalue": 0.0,
+   "maturity": 1,
+   "members": 3,
+   "open": true,
+   "ratelimitbps": 0,
+   "ratewindow": 144,
+   "released": false,
+   "seats": 15,
+   "setid": "8b1d92911312d620fee4e44da7da81b87d54fdd9bcf90d94c9a692432b3c4c63",
+   "slashthreshold": 1,
+   "unlockthreshold": 1,
+   "winddownheight": 0
+  },
+  {
+   "active": 1,
+   "admitkey": "02c3ac780b7c19de91e8a70b6c80a168fc7cd32b326aef9c677f5c98157e78fb7d",
+   "bondlockmin": 0,
+   "bondmin": 1.0,
+   "cancelthreshold": 1,
+   "createheight": 201,
+   "current": 1,
+   "dormant": false,
+   "epoch": 12,
+   "epochbasis": 10.0,
+   "epochused": 2.5,
+   "height": 244,
+   "livenesswindow": 50,
+   "lockedvalue": 9.0,
+   "maturity": 0,
+   "members": 1,
+   "open": false,
+   "ratelimitbps": 5000,
+   "ratewindow": 20,
+   "released": false,
+   "seats": 3,
+   "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "slashthreshold": 1,
+   "unlockavailable": 2.5,
+   "unlockthreshold": 1,
+   "winddownheight": 0
+  }
+ ],
+ "vault_decodescript_act_raw": "{\n  \"type\": \"act\",\n  \"type\": \"heartbeat\",\n  \"setid\": \"4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73\",\n  \"memberkey\": \"02875b1350292608b015aa56ebb4e9eabbe4bedcfacd32cf51f10a68b4f5dd93b2\",\n  \"signatures\": [\n    {\n      \"sig\": \"20f73668b1f676d20168ce24a00704526b3f0604e60262d8924c10e4eb4df5190c4815aebf87809cb6188233f995913f4ec7ff0b8f5b701ea9c49632074739ec59\"\n    }\n  ],\n  \"payload\": \"5956010373ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e02875b1350292608b015aa56ebb4e9eabbe4bedcfacd32cf51f10a68b4f5dd93b2\"\n}\n",
+ "vault_decodescript_intent": {
+  "cancelsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+  "delay": 100,
+  "ownerkey": "038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543",
+  "recipienthash": "59f72ba5bfa5bbe18f4fe0bdc3a460dee91372f3a59ff04f79577fcad1b5d8f4",
+  "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+  "tag": "54455354",
+  "tagtext": "TEST",
+  "type": "intent",
+  "vaulthash": "95547964c6a9dcacd8d3b26376406547e5861867227ca76b6a7f33d1a7df3a8e"
+ },
+ "vault_decodescript_vault": {
+  "appheight": 0,
+  "cancelsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+  "delay": 5,
+  "ownerheight": 353,
+  "ownerkey": "03d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4ea",
+  "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+  "tag": "54455354",
+  "tagtext": "TEST",
+  "type": "vault"
+ },
+ "vault_getinfo": {
+  "activationheight": 103,
+  "active": true,
+  "branchid": "6d5b7a31",
+  "dbtip": {
+   "hash": "054d7a780efaf7e108b23aaec3fe2b84577ae24450860c9f17f0babb20fa0229",
+   "height": 243
+  },
+  "height": 243,
+  "intents": 1,
+  "lockedvalue": 9.0,
+  "sets": 2,
+  "statehash": "ffaf5133a5cf29814acdbe3b121d063267cd6c55f1999927ce60522790b659f3",
+  "vaults": 4
+ },
+ "vault_list": [
+  {
+   "appheight": 0,
+   "cancelsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "delay": 5,
+   "height": 242,
+   "kind": "vault",
+   "outpoint": "e361aa88cd6d4e4adf790a849c679313aa0a76a64b19a9c9438a83576a167455:1",
+   "ownerheight": 353,
+   "ownerkey": "03d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4ea",
+   "script": "04544553542073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e556d7576518763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e51c0677652876375026101b1752103d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4eaac6776538763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34ec1692103d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4eaac67548800b1686868",
+   "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "tag": "54455354",
+   "tagtext": "TEST",
+   "txid": "e361aa88cd6d4e4adf790a849c679313aa0a76a64b19a9c9438a83576a167455",
+   "value": 3.5,
+   "valuezat": 350000000,
+   "vout": 1,
+   "wallet": true
+  },
+  {
+   "appheight": 0,
+   "cancelsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "delay": 5,
+   "height": 243,
+   "kind": "vault",
+   "outpoint": "03a3b608842315ca0fe126a840d85bc4953a7021c453dc104484f276485e4d9f:0",
+   "ownerheight": 353,
+   "ownerkey": "03d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4ea",
+   "script": "04544553542073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e556d7576518763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e51c0677652876375026101b1752103d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4eaac6776538763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34ec1692103d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4eaac67548800b1686868",
+   "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "tag": "54455354",
+   "tagtext": "TEST",
+   "txid": "03a3b608842315ca0fe126a840d85bc4953a7021c453dc104484f276485e4d9f",
+   "value": 1.5,
+   "valuezat": 150000000,
+   "vout": 0,
+   "wallet": true
+  },
+  {
+   "cancellable": true,
+   "cancelsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "delay": 100,
+   "height": 242,
+   "kind": "intent",
+   "mature": false,
+   "matureheight": 342,
+   "origin": "04544553542073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e01646d7576518763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e51c0677652876375021102b17521038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543ac6776538763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34ec16921038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543ac67548800b1686868",
+   "outpoint": "2bf2a8e512f3fffc5bb56613d1f38174e8214e9b8af37106da8a45e978ddb09f:0",
+   "ownerkey": "038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543",
+   "recipienthash": "59f72ba5bfa5bbe18f4fe0bdc3a460dee91372f3a59ff04f79577fcad1b5d8f4",
+   "script": "04544553542059f72ba5bfa5bbe18f4fe0bdc3a460dee91372f3a59ff04f79577fcad1b5d8f42095547964c6a9dcacd8d3b26376406547e5861867227ca76b6a7f33d1a7df3a8e6d7576518763750164b26776528763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e52c06753882073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34ec16921038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543ac6868",
+   "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "tag": "54455354",
+   "tagtext": "TEST",
+   "txid": "2bf2a8e512f3fffc5bb56613d1f38174e8214e9b8af37106da8a45e978ddb09f",
+   "value": 1.0,
+   "valuezat": 100000000,
+   "vaulthash": "95547964c6a9dcacd8d3b26376406547e5861867227ca76b6a7f33d1a7df3a8e",
+   "vout": 0,
+   "wallet": true
+  },
+  {
+   "appheight": 0,
+   "cancelsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "delay": 100,
+   "height": 242,
+   "kind": "vault",
+   "outpoint": "2bf2a8e512f3fffc5bb56613d1f38174e8214e9b8af37106da8a45e978ddb09f:1",
+   "ownerheight": 529,
+   "ownerkey": "038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543",
+   "script": "04544553542073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e01646d7576518763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e51c0677652876375021102b17521038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543ac6776538763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34ec16921038933890abbd004b76ccedba6a1dcb23c4d2b18d13b7f99c00f84d3e4905ef543ac67548800b1686868",
+   "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "tag": "54455354",
+   "tagtext": "TEST",
+   "txid": "2bf2a8e512f3fffc5bb56613d1f38174e8214e9b8af37106da8a45e978ddb09f",
+   "value": 2.0,
+   "valuezat": 200000000,
+   "vout": 1,
+   "wallet": true
+  },
+  {
+   "appheight": 0,
+   "cancelsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "delay": 5,
+   "height": 223,
+   "kind": "vault",
+   "outpoint": "f9be8a1b80715651b79573ebfc4171fc8e20083d4ba8cfbe4f3982780e2d10c6:0",
+   "ownerheight": 353,
+   "ownerkey": "03d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4ea",
+   "script": "04544553542073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e556d7576518763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34e51c0677652876375026101b1752103d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4eaac6776538763752073ece6f0627012dbf987734394942385fa3b69d4c400a4773295640f0075a34ec1692103d48f73236995e16e295db442da0f095cbde304215763f3824bd0658ee7aec4eaac67548800b1686868",
+   "setid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
+   "tag": "54455354",
+   "tagtext": "TEST",
+   "txid": "f9be8a1b80715651b79573ebfc4171fc8e20083d4ba8cfbe4f3982780e2d10c6",
+   "value": 2.0,
+   "valuezat": 200000000,
+   "vout": 0,
+   "wallet": true
+  }
+ ],
+ "yed_getactivation": {
+  "activationHeight": 103,
+  "attestorSetId": "5e755e755e755e755e755e755e755e755e755e755e755e755e755e755e755e75",
+  "branchId": "6d5b7a31",
+  "claimDelay": 10,
+  "height": 331,
+  "name": "Vault",
+  "status": "active"
+ },
  "yed_getblockverdict": {
   "blockInvalid": true,
-  "enforcementOn": true,
   "reason": "vault-spend-short-burn:6a1f2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8",
   "transactions": [
    {
@@ -12,7 +259,7 @@
       "vout": 0
      }
     ],
-    "feeZat": 62814071,
+    "feeZat": 629722922,
     "path": "owner",
     "payee": "smQvTmAz2ExamplePayoutAddress1111111",
     "txid": "6a1f2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8",
@@ -21,17 +268,10 @@
     "yedIn": 50000,
     "yedOut": 0
    }
-  ]
+  ],
+  "verdict": "vault-spend-short-burn"
  },
  "yed_getinfo": {
-  "abandoned": false,
-  "activation": {
-   "activateHeight": 193,
-   "lockInHeight": 129,
-   "signalCount": 64,
-   "status": "active",
-   "window": 64
-  },
   "attest": {
    "armHeight": 308,
    "armed": true,
@@ -46,7 +286,6 @@
   "blockhash": "0f3a9c1e5b7d2a4c6e8f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f",
   "chainHeight": 331,
   "enabled": true,
-  "enforcing": true,
   "healthy": true,
   "height": 331,
   "lockedOutputs": 2,
@@ -55,13 +294,11 @@
    "payoutAddress": "smQvTmAz2ExamplePayoutAddress1111111",
    "quoteAgeSeconds": 12,
    "quoteKind": "quote",
-   "registered": true,
-   "signal": true
+   "registered": true
   },
   "mintRequiresArmed": false,
   "network": "regtest",
   "params": {
-   "abandonBlocks": 128,
    "attest": {
     "ageCap": 64,
     "armDelay": 8,
@@ -95,6 +332,8 @@
     "required": true,
     "residualMinZat": 100000
    },
+   "attestorSetId": "5e755e755e755e755e755e755e755e755e755e755e755e755e755e755e755e75",
+   "claimDelay": 10,
    "classes": [
     {
      "baseRatioBps": 50000,
@@ -103,7 +342,6 @@
      "minBlocks": 48
     }
    ],
-   "enforceUntilHeight": 0,
    "feeBps": 25,
    "feeMinZat": 50000000,
    "feeZat": 1000,
@@ -126,28 +364,30 @@
    "refLag": 2,
    "refWindow": 40,
    "sigmaRefBps": 0,
-   "startHeight": 1,
+   "startHeight": 103,
    "supplyCapBps": 0,
    "tokenValueZat": 10000,
-   "valveBlocks": 6,
    "windows": {
     "fast": 8,
     "mid": 24,
-    "signal": 64,
     "slow": 64
    }
   },
   "protectedByIndex": true,
   "rebuilt": false,
-  "rejectedBlocks": 0,
-  "rpcversion": 4,
-  "startHeight": 1,
-  "sunset": false,
+  "rpcversion": 5,
+  "startHeight": 103,
   "supplyCapReached": false,
-  "suppressedBlocks": 0,
-  "templatePolicy": "strict",
   "unhealthyReason": "",
-  "valveTripped": false
+  "upgrade": {
+   "activationHeight": 103,
+   "attestorSetId": "5e755e755e755e755e755e755e755e755e755e755e755e755e755e755e755e75",
+   "branchId": "6d5b7a31",
+   "claimDelay": 10,
+   "height": 331,
+   "name": "Vault",
+   "status": "active"
+  }
  },
  "yed_getstats": {
   "activeVaults": 3,

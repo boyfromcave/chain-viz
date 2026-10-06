@@ -129,7 +129,8 @@ pub enum EventKind {
     Price(Value),
     /// A `yed_getstats` snapshot (C3).
     Stats(Value),
-    /// A block a node rejected under enforcement, with `yed_getblockverdict`'s answer.
+    /// A block a node refused (a side tip `getchaintips` calls `invalid`) whose
+    /// `yed_getblockverdict` says `blockInvalid`: a YED-invalid block, rejected by consensus.
     RejectedBlock {
         hash: String,
         verdict: Value,
@@ -141,6 +142,12 @@ pub enum EventKind {
     },
     Attestor(Value),
     Vault(Value),
+    /// A spend of a vault-primitive V or I output (`model/vault.rs`): unlock, release, cancel, owner…
+    VaultSpend(Value),
+    /// A `YV` act (SET_CREATE, SET_JOIN, SET_HEARTBEAT, …) in a fetched block.
+    SetAct(Value),
+    /// A signer set's or member's predicate changed (`dormant`, `released`, `status`, `live`, …).
+    SetState(Value),
     /// The devnet's `heartbeat.json`.
     DevnetHeartbeat(Value),
     /// The devnet's `sim-stats.json`.
@@ -186,6 +193,9 @@ impl Event {
             EventKind::StatehashMismatch { .. } => "statehash_mismatch",
             EventKind::Attestor(_) => "attestor",
             EventKind::Vault(_) => "vault",
+            EventKind::VaultSpend(_) => "vault_spend",
+            EventKind::SetAct(_) => "set_act",
+            EventKind::SetState(_) => "set_state",
             EventKind::DevnetHeartbeat(_) => "devnet_heartbeat",
             EventKind::DevnetSim(_) => "devnet_sim",
             EventKind::YoloStatus(_) => "yolo_status",

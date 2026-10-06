@@ -5,8 +5,10 @@
 //! The revenue ledger (plan §3.2.5, C4): one attributed output per row,
 //! `(height, txid, vout, kind, zat, payee)`, built from each confirmed block's coinbase
 //! (`subsidy`, `subsidy_other`, `netfee`) and from every Yellowback transaction's `yed_gettxinfo`
-//! (`enforcefee` → `payee`, `attestfee` → `attestPayee`, `residual` → the owner,
-//! `collateral_release` → whoever took a vault's collateral while enforcement was off). Pure
+//! (`enforcefee` → `payee`, `attestfee` → `attestPayee`, `residual` → the owner). The v3
+//! `collateral_release` rows (a vault taken through the anyone-can-spend branch while
+//! enforcement was off) are gone with that branch: under the vault upgrade a claim is a
+//! primitive intent and the rules are consensus (upgrade plan §6). Pure
 //! state: the collector feeds it blocks, tags, enriched transactions and `yed_getfeepayee`
 //! answers and publishes what it returns; `/api/revenue` rolls it up.
 //!
@@ -52,14 +54,12 @@ pub enum Kind {
     Enforcefee,
     /// AFEE-1: `attestFeeZat` → `attestPayee`.
     Attestfee,
-    /// A vault's collateral taken through the `OP_TRUE` path while enforcement was off.
-    CollateralRelease,
     /// RED-5: `residualZat` back to the vault owner on a claim.
     Residual,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 7] = [Kind::Subsidy, Kind::SubsidyOther, Kind::Netfee, Kind::Enforcefee, Kind::Attestfee, Kind::CollateralRelease, Kind::Residual];
+    pub const ALL: [Kind; 6] = [Kind::Subsidy, Kind::SubsidyOther, Kind::Netfee, Kind::Enforcefee, Kind::Attestfee, Kind::Residual];
     pub fn name(self) -> &'static str {
         match self {
             Kind::Subsidy => "subsidy",
@@ -67,7 +67,6 @@ impl Kind {
             Kind::Netfee => "netfee",
             Kind::Enforcefee => "enforcefee",
             Kind::Attestfee => "attestfee",
-            Kind::CollateralRelease => "collateral_release",
             Kind::Residual => "residual",
         }
     }
@@ -79,7 +78,6 @@ impl Kind {
             Kind::Netfee => "netfee",
             Kind::Enforcefee => "enforcefee",
             Kind::Attestfee => "attestfee",
-            Kind::CollateralRelease => "collateralRelease",
             Kind::Residual => "residual",
         }
     }
@@ -342,10 +340,9 @@ impl RevenueModel {
         }
     }
 
-    /// An enriched (confirmed) Yellowback transaction: its fee, attestor-fee, residual and
-    /// (with enforcement off) collateral-release rows. `enforcing` is the node's
-    /// `yed_getinfo.enforcing` at the time. Idempotent per `(txid, kind)`.
-    pub fn on_yb_tx(&mut self, height: u64, t: &YbTx, enforcing: bool) -> Vec<Emitted> {
+    /// An enriched (confirmed) Yellowback transaction: its fee, attestor-fee and residual rows.
+    /// Idempotent per `(txid, kind)`.
+    pub fn on_yb_tx(&mut self, height: u64, t: &YbTx) -> Vec<Emitted> {
         if t.info.is_none() {
             return Vec::new();
         }
@@ -353,7 +350,6 @@ impl RevenueModel {
             self.learn_prefix(a);
         }
         let outs = self.outs.get(&t.txid).cloned().unwrap_or_default();
-        let out_at = |n: Option<u8>| n.and_then(|n| outs.iter().find(|o| o.n == n as u32));
         let mut rows = Vec::new();
         let collat = if t.tx_type == "mint" { outs.first().map(|o| o.zat).unwrap_or(0) } else { 0 };
         if t.fee_zat > 0 {
@@ -385,14 +381,6 @@ impl RevenueModel {
                 payee: o.and_then(|o| o.address.clone()).unwrap_or_else(|| "owner".into()),
                 ref_height: None,
             });
-        }
-        if !enforcing && t.tx_type == "redeem" {
-            // The vault spend's collateral: the largest output that is not the fee, the
-            // attestor fee, the payload or a carrier (10 000 zat).
-            let skip: BTreeSet<u32> = [out_at(t.payload.fee_vout), out_at(t.payload.attest_fee_vout)].into_iter().flatten().map(|o| o.n).chain(std::iter::once(t.payload.payload_vout)).collect();
-            if let Some(o) = outs.iter().filter(|o| !skip.contains(&o.n) && o.zat > 10_000).max_by_key(|o| o.zat) {
-                rows.push(Row { height, txid: t.txid.clone(), vout: o.n, kind: Kind::CollateralRelease, zat: o.zat, payee: o.address.clone().unwrap_or_else(|| "unknown".into()), ref_height: None });
-            }
         }
         let summary = json!({
             "txid": t.txid, "type": t.tx_type, "path": t.path, "verdict": t.verdict,
@@ -542,7 +530,7 @@ impl RevenueModel {
     }
 
     /// `GET /api/revenue?from&to&by`: the rows in `[from, to]` rolled up by `payoutKey`,
-    /// `attestor` or `block`, with the counterfactual and the no-enforcement releases.
+    /// `attestor` or `block`, with the counterfactual.
     /// `miners` and `attestors` are the leader's `yed_listminers` / `yed_listattestors`.
     pub fn query(&self, from: u64, to: u64, by: &str, price: &dyn Fn(u64) -> Option<i64>, miners: &[Value], attestors: &[Value]) -> Value {
         let blocks: Vec<(&u64, &BlockLedger)> = self.blocks.range(from..=to).collect();
@@ -593,12 +581,6 @@ impl RevenueModel {
             "label": format!("a quoting pool of any size would have expected ≈ {:.4} YEC in this range", cf_zat / 1e8),
             "method": "Σ fee / (|E(R)| + 1) over the enforcement-fee outputs, E(R) from yed_getfeepayee at each fee's refHeight; uniform selection. Accuracy weighting (FEE-W) makes the realised figure for an honest quoter higher.",
         });
-        let releases: Vec<&Row> = all.iter().copied().filter(|r| r.kind == Kind::CollateralRelease).collect();
-        let no_enforcement = json!({
-            "rows": releases.iter().map(|r| row_json(r, price)).collect::<Vec<_>>(),
-            "total": money_of(&releases),
-            "label": "collateral taken through the OP_TRUE path while enforcement was off",
-        });
         let groups = match by {
             "attestor" => self.by_attestor(&all, &money_of, attestors),
             "block" => blocks.iter().map(|(h, b)| self.block_json(**h, b, &money_of, price)).collect(),
@@ -612,7 +594,6 @@ impl RevenueModel {
             "totals": totals,
             "groups": groups,
             "counterfactual": counterfactual,
-            "noEnforcement": no_enforcement,
             "rows": rows,
             "rowsTruncated": all.len() > MAX_ROWS,
         })
@@ -694,7 +675,7 @@ impl RevenueModel {
         json!({
             "height": height, "hash": b.hash, "miner": b.miner, "tag": b.tag, "priceUsed": price(height),
             "subsidy": of(Kind::Subsidy), "subsidyOther": of(Kind::SubsidyOther), "netfee": of(Kind::Netfee),
-            "enforcefee": of(Kind::Enforcefee), "attestfee": of(Kind::Attestfee), "residual": of(Kind::Residual), "collateralRelease": of(Kind::CollateralRelease),
+            "enforcefee": of(Kind::Enforcefee), "attestfee": of(Kind::Attestfee), "residual": of(Kind::Residual),
             "feePayees": payees, "ybTxs": b.yb_txs,
         })
     }
@@ -834,9 +815,9 @@ mod tests {
         assert_eq!(m.canonical("hash160:0101010101010101010101010101010101010101"), "pool1");
         let mut t = YbTx::from_payload("m1", p);
         t.apply(&json!({"type": "mint", "verdict": "ok", "feeZat": 50_000_000, "payee": "pool1", "attestFeeZat": 12_500_000, "attestPayee": "att1", "residualZat": 0}), Some(20));
-        let ev = m.on_yb_tx(20, &t, true);
+        let ev = m.on_yb_tx(20, &t);
         assert_eq!(ev.len(), 2);
-        assert!(m.on_yb_tx(20, &t, true).is_empty(), "idempotent");
+        assert!(m.on_yb_tx(20, &t).is_empty(), "idempotent");
         assert_eq!(m.next_ref(), Some((18, 1_000_000_000)), "collateral is the vault output");
         m.set_eligible(18, Some(2));
         assert_eq!(m.next_ref(), None);
@@ -866,7 +847,9 @@ mod tests {
     }
 
     #[test]
-    fn release_when_not_enforcing_and_eviction() {
+    fn redeem_rows_and_eviction() {
+        // rpcversion 5: a redeem yields its fee row only (no collateral-release row: the
+        // anyone-can-spend branch and "enforcement off" are gone, upgrade plan §6)
         let mut m = RevenueModel::new(2);
         let mut r = vec![0x59, 0x42, 0x03, 0x03];
         r.extend_from_slice(&5u32.to_le_bytes());
@@ -878,16 +861,14 @@ mod tests {
         }
         let mut t = YbTx::from_payload("r1", p);
         t.apply(&json!({"type": "redeem", "path": "owner", "verdict": "ok", "feeZat": 50_000_000, "payee": "pool1"}), Some(8));
-        let ev = m.on_yb_tx(8, &t, false);
-        assert_eq!(ev.len(), 2);
-        let l = m.block(8).unwrap();
-        let rel = l.rows.iter().find(|r| r.kind == Kind::CollateralRelease).unwrap();
-        assert_eq!((rel.zat, rel.vout), (950_000_000, 0));
+        let ev = m.on_yb_tx(8, &t);
+        assert_eq!(ev.len(), 1);
+        assert!(m.block(8).unwrap().rows.iter().all(|r| r.kind != Kind::Enforcefee || r.zat == 50_000_000));
         // keep = 2: heights 5 evicted, cumulative counters whole
         assert_eq!(m.window(), Some((6, 8)));
         assert_eq!(m.snapshot(&|_| None)["totals"]["subsidy"]["zat"], 4 * 300_000_000);
         let q = m.query(1, 100, "block", &|_| None, &[], &[]);
-        assert_eq!(q["noEnforcement"]["total"]["zat"], 950_000_000);
+        assert!(q.get("noEnforcement").is_none());
         assert_eq!(q["totals"]["blocks"], 3);
         assert_eq!(q["totals"]["enforcefee"]["usdComplete"], false);
     }

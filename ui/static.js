@@ -21,6 +21,8 @@
     }
     if (path === '/api/snapshot') return reply(data.snapshot);
     if (path === '/api/health') return reply(data.health);
+    // the vault panel's slice is a part of the snapshot (the snapshot carries `vault`)
+    if (path === '/api/vaults') return reply(data.snapshot?.vault ? { ...data.snapshot.vault, tip: data.snapshot.chain?.majority ?? null, seq: data.snapshot.seq } : null);
     if (path.startsWith('/api/')) return reply(null);
     return realFetch ? realFetch(input, init) : Promise.reject(new Error('no fetch'));
   };

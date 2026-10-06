@@ -107,6 +107,24 @@ console.log('     header:', ['chain-name', 'node-count', 'tip', 'since', 'spacin
   console.log('     ', el('rv-tiles').children.map((t) => t.children[0].textContent + ' ' + t.children[1].textContent).join(' | '));
   console.log('     ', el('rv-cf').textContent.slice(0, 160));
 }
+// vault primitive panel (P6): its tables follow /api/vaults (rows + the header row; an empty
+// table holds one placeholder row instead)
+if (!isStatic) {
+  const vp = await (await fetch(base + '/api/vaults')).json();
+  const el = (id) => document.getElementById(id);
+  const rows = (id, n, cap = Infinity) => { const got = el(id).children.length, want = 1 + Math.max(1, Math.min(n, cap)); return got === want ? ok(`vaults: ${id} ${got - 1} row(s) for ${n}`) : fail(`vaults: ${id} ${got} rows != ${want}`); };
+  rows('vp-sets', vp.sets.length); rows('vp-intents', vp.intents.length); rows('vp-vaults', vp.vaults.length, 100);
+  rows('vp-spends', vp.spends.length, 60); rows('vp-acts', vp.acts.length, 40); rows('vp-tags', vp.byTag.length);
+  const yedRows = el('vp-sets').children.filter((r) => r.attrs?.['data-yed'] === '1').length;
+  const yedSets = vp.sets.filter((s) => s.setid === vp.attestorSetId).length;
+  yedRows === yedSets ? ok(`vaults: ${yedRows} set row(s) marked as the YED attestor set ${vp.attestorSetId?.slice(0, 12) ?? '–'}`) : fail(`vaults: ${yedRows} YED-marked rows != ${yedSets}`);
+  const cancels = vp.spends.filter((x) => x.action === 'cancel').length;
+  ok(`vaults: ${vp.info ? `upgrade ${vp.info.branchid} from ${vp.info.activationheight}, ${vp.info.sets} sets, ${vp.info.vaults} vaults, ${vp.info.intents} intents, statehash ${vp.info.statehash.slice(0, 12)}` : 'no vault_getinfo'}; ${vp.spends.length} spends (${cancels} cancel)`);
+  console.log('     ', el('vp-tiles').children.map((t) => t.children[0].textContent + ' ' + t.children[1].textContent).join(' | '));
+  // the health ribbon carries the upgrade, never the retired enforcement pills (upgrade plan §6)
+  const ribbon = el('yb-ribbon').textContent;
+  /enforcing|valve|sunset|abandoned|signals/.test(ribbon) ? fail(`health ribbon still shows retired state: ${ribbon.slice(0, 160)}`) : ok(`health ribbon: ${ribbon.slice(0, 140)}`);
+}
 // reconnect path: closing the socket must schedule a reconnect with backoff
 if (isStatic) {
   app.store.conn === 'static' ? ok(`static mode: conn=static, ${app.store.events.length} events applied from the export, no socket`) : fail(`static mode: conn=${app.store.conn}`);

@@ -4,11 +4,13 @@ chain-viz is a **read-only sidecar of `ycashd`** that shows, live, what a Ycash 
 Ycash Yellowback (YED) overlay are doing across many nodes at once: per-node tips and their
 disagreement, the block DAG with side branches, reorgs and orphans as they happen, the mempool
 with first-seen per node and each Yellowback transaction's verdict before a pool includes it,
-the state of every Yellowback enforcement mechanism (activation, arming, halt mask, prices,
-supply, collateral, vaults, attestors, state-hash agreement), and a **revenue ledger** that
+the state of the Yellowback rule module (the vault upgrade it is part of, arming, halt mask,
+prices, supply, collateral, vaults, attestors, state-hash agreement), the **vault primitive**
+under it (signer sets, vaults and intents by application tag, unlocks, releases and cancels,
+set acts), and a **revenue ledger** that
 attributes every enforcement fee and attestor fee to the key that received it — so a pool
 operator or a prospective attestor can see what participating pays. It never holds a key,
-never broadcasts, never calls a `yed_*` writer; a CI test enforces that. One static binary,
+never broadcasts, never calls a `yed_*`, `set_*` or `vault_*` writer; a CI test enforces that. One static binary,
 an embedded UI, no build step for the page.
 
 ![chain-viz on an 11-node devnet](docs/screenshot.png)
@@ -159,32 +161,42 @@ per call and at most 64 WebSocket connections are open at once, `--public` or no
   chain{heads, majority, main[≤200 BlockInfo, newest last], side[], tips, blockCount},
   mempool{txs[{txid,size,fee,time,firstSeen,present,depends,yb?}], count, bytes, feeTotal, nodes},
   yedInfo{<node>: yed_getinfo}, yellowback{…}, revenue{totals, byPayee, aliases, window},
-  devnet{heartbeat, sim}}`. `BlockInfo` is `{hash, height, prev, time, txCount, size,
+  devnet{heartbeat, sim}, vault{…as /api/vaults}}`. `BlockInfo` is `{hash, height, prev, time, txCount, size,
   chainwork, status: main|side|orphaned, nodes, seen, txids?, yb?{tag, miner, rejected, txs}}`.
 * **`GET /api/events?since=<seq>`** — the event log from a sequence number, oldest first,
   each `{seq, ts, height?, node?, kind, …}`. Kinds (schema v1, `src/events.rs`): `session`,
   `block`, `block_side`, `orphaned`, `reorg{depth,from,to,toHeight}`, `tip`, `mempool_add`,
   `mempool_remove`, `yb_tx{txid,type,verdict,feeZat,payee,…}`, `yb_state{field,from,to}`,
   `price`, `stats`, `statehash_mismatch`, `attestor`, `vault`, `revenue{entry,zat,payee,usd}`,
-  `rejected_block{hash,verdict}`, `devnet_heartbeat`, `devnet_sim`, `note{text}`.
+  `rejected_block{hash,verdict}` (a side tip `getchaintips` calls `invalid` whose
+  `yed_getblockverdict` says `blockInvalid`), `vault_spend{outpoint,kind,action,selector,txid,
+  height,returnedTo,inferred,tag,…}`, `set_act{txid,height,type,setid}`,
+  `set_state{setid,member,field,from,to}`, `devnet_heartbeat`, `devnet_sim`, `note{text}`.
 * **`WS /ws`** — the same events pushed. First frame `{"kind":"hello","seq","version"}`; on a
   slow client `{"kind":"lagged","dropped","seq"}`, after which resync via `/api/events?since=`.
 * **`GET /api/yellowback`** — the health panel's slice, fetched once per block:
   `{seq, tip, yedInfo, yellowback{leader, stats{<node>: yed_getstats}, statehash{<node>},
-  statehash_agree, price, attestPrices, activation, haltBits, miners[], attestors[], vaults[],
+  statehash_agree, price, attestPrices, activation (yed_getactivation: the upgrade object), haltBits, miners[], attestors[], vaults[],
   claimable[], history[], historyFrom, txs[], rejected[], mockPrice,
   noPrice{window, fromHeight, toHeight, covered, blocks, hours}},
   blocks[{hash,height,time,txCount,yb}]}`.
 * **`GET /api/revenue?from=<h>&to=<h>&by=payoutKey|attestor|block`** — the ledger rolled up
   over `[from, to]` (default: the whole kept window):
   `{from, to, by, window{from,to}, priceLabel: "at pMint",
-  totals{subsidy|subsidy_other|netfee|enforcefee|attestfee|collateral_release|residual: {zat, usd, usdComplete}, blocks, ybTxs},
+  totals{subsidy|subsidy_other|netfee|enforcefee|attestfee|residual: {zat, usd, usdComplete}, blocks, ybTxs},
   groups[…], counterfactual{zat, usd, feeOutputs, resolved, unresolved, noEligible, label, method},
-  noEnforcement{rows, total, label}, rows[≤5000 {height,txid,vout,kind,zat,payee,usd,refHeight?}],
-  rowsTruncated, seq, tip, enforcing[], pMintNow}`. A `payoutKey` group is
+  rows[≤5000 {height,txid,vout,kind,zat,payee,usd,refHeight?}],
+  rowsTruncated, seq, tip, pMintNow}`. A `payoutKey` group is
   `{payee, aliases, blocksMined, tags, timesSelected, enforcefee, subsidy, netfee,
   stockCoinbase, perTagZat, perBlockZat, miner}`; an `attestor` group carries the bond and the
   realised yield; a `block` group the rows of that height.
+* **`GET /api/vaults`** — the vault primitive (`src/model/vault.rs`), refreshed once per block:
+  `{available, info: vault_getinfo{branchid, activationheight, active, height, dbtip, sets,
+  vaults, intents, lockedvalue, statehash}, attestorSetId, nextHeight, sets[set_getinfo + rate{limited,
+  limit, used, basis, usedBps} + yed], vaults[vault_list V rows], intents[vault_list I rows +
+  blocksToRelease], byTag[{tag, tagtext, vaults, intents, valuezat}], spends[≤200], acts[≤200],
+  seq, tip, leader}`. `rate.limit` = `epochbasis × ratelimitbps / 10000`; `blocksToRelease` =
+  `matureheight − nextHeight`; `yed` marks the set `yed_getinfo.upgrade.attestorSetId` names.
 
 ## The panels
 
@@ -194,37 +206,61 @@ regtest, else Ycash's 75 s).
 
 **Chain** — the block DAG newest right: the main row on top, side and orphaned blocks hanging
 below their fork point; each block shows height, short hash, tx count, the tag's price and
-signal bit and the quoting `payoutKey`, and a red edge if any node rejected it. One chip per
+the quoting `payoutKey`, and a red edge if a node refused it as YED-invalid. One chip per
 node with its tip; chips off the majority are highlighted — this is the fork-risk indicator,
 and it is why chain-viz watches many nodes at once. Below: a reorg log (`reorg` is per node,
 so one devnet reorg is one row per node) and three **derived** gauges, labelled as such:
 *fork* = disagreeing nodes × seconds disagreeing (clocked from when the page first saw it),
-*orphan* = extra blocks at duplicate heights in the last 20, *reorg* = deepest side branch
-within the work-valve depth (6).
+*orphan* = extra blocks at duplicate heights in the last 20, *reorg* = deepest side branch,
+on a scale of 6 blocks.
 
 **Mempool** — bubbles by fee rate × time in mempool (radius ~ size). Grey for ordinary
 transactions; coloured by type for Yellowback ones (`mint`, `transfer`, `redeem`, claim =
 `redeem` with path `claim`, `register`, `notice`, `equivocation`, `revive`). A Yellowback
-transaction that an enforcing node **would reject** at the current tip
+transaction that the node **would reject** at the current tip
 (`yed_validaterawtransaction`) is shown red before any pool includes it. Tiles: count, bytes,
 fees, median age, transactions older than 2 blocks (a pool filtering it, or a fee below
 policy), *partial* = present on some nodes but not all (propagation, or a stock node refusing
 what it does not understand).
 
-**Yellowback health** — a state ribbon (`healthy`, `enforcing`, `valveTripped`, `sunset`,
-`abandoned`, `mintRequiresArmed` (rpcversion 4, hardening H-1), activation `SIGNALING → LOCKED_IN →
-ACTIVE`, arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
+**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed` (rpcversion 4,
+hardening H-1), a warning pill when a node reports an `rpcversion` other than 5, the vault
+upgrade from `yed_getinfo.upgrade` (status, branch ID, activation height, claim delay, the YED
+attestor set), arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
 `UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
 reports `mintingAllowed` false and `mintableClasses` empty) — and a NO_PRICE-hours counter: the
 blocks with the NO_PRICE bit among the timeline's last 1,152 (one day at 75 s), as hours at the
-target spacing, with how many of those heights the timeline holds); a timeline by height with lanes for activation, arming, the six halt-mask bits and
-rejected-block ticks, backfilled from `yed_gethistory`; prices (`pFast`/`pMid`/`pSlow`, the
+target spacing, with how many of those heights the timeline holds); a timeline by height with lanes for the upgrade (active from its activation height), arming,
+the four halt-mask bits rpcversion 5 can set and refused-block ticks, backfilled from `yed_gethistory`; prices (`pFast`/`pMid`/`pSlow`, the
 `pMint`–`pClaim` band, the fed price dotted on the devnet, window fill bars); supply and
 collateral tiles with the global ratio against the 110 % and 105 % lines; a vault scatter
 (ratio × blocks to `claimHeight`, claimable vaults ringed); the attestor table; state-hash
-agreement per node and the rejected/suppressed counters with verdicts; the Yellowback
-transaction table (a void mint's verdict, e.g. `mint-halted-unarmed`, carries an explanation on
-hover; the void tile counts the listed VOID vaults whose `voidReason` is `mint-halted-unarmed`). Two ratios on this panel are priced differently by the node on purpose:
+agreement per node and the refused blocks with their verdicts; the Yellowback
+transaction table (a refused mint's verdict, e.g. `mint-halted-unarmed`, carries an explanation
+on hover; `claim_release`, `claim_cancel` and `set_act` rows are the claim intent's two ends and
+an attestor's set acts); vault tiles with `CLAIMING` (a claim intent pending) and, only when an
+older VOID vault is listed, the void count.
+
+The v3 enforcement state is not shown any more: under the vault upgrade (rpcversion 5) the
+Yellowback rules are consensus from the activation height, so `enforcing`, the work valve,
+the sunset, abandonment, pool signalling / lock-in, the rejected / suppressed counters and the
+"collateral released while not enforcing" ledger rows are gone from the node and from here
+(upgrade plan §6).
+
+**Vault primitive** — tiles from `vault_getinfo` (upgrade active and from which height, branch
+ID, sets, vaults, intents, locked YEC, state hash); the signer sets (`set_list`, and
+`set_getinfo` for the members of up to 16 sets) with seats, thresholds, open/admitted,
+current/active members, `dormant`/`released`, wind-down, and the rate epoch as a bar
+(unlocked this epoch against `epochbasis × ratelimitbps`); each set's member table (status,
+current, live, last act, bond, frozen); the YED attestor set starred; vaults and intents by
+application tag; pending intents with blocks to release and whether a cancel can still land;
+the spends of every V and I output in the blocks chain-viz fetched, from the spending input's
+selector (V: unlock / owner / owner-released / app; I: release / **cancel** / owner-released),
+a cancel showing the vault output its value went back to; and the `YV` set acts. An outpoint
+that leaves `vault_list` without a spend seen in a fetched block (chain-viz was not running, or
+the block was walked before the outpoint was listed) is classified from the listing alone and
+marked *inferred*: an intent replaced by a vault with its `origin` script before maturity is a
+cancel, one gone at or after maturity a release. Two ratios on this panel are priced differently by the node on purpose:
 the global-ratio tile is at `pMint`, the scatter at `pClaim`, and they disagree for about one
 slow window after a price move (plan C-F9).
 
@@ -264,9 +300,6 @@ every Yellowback transaction in a block. It is **attributed, not estimated**:
   (FEE-W) makes the realised figure for an honest quoter higher, so the number is a floor.
   `resolved`/`unresolved`/`noEligible` say how many fee outputs it covers; a `refHeight` the
   node refuses or a window nobody quoted in is counted, not guessed.
-* **Releases under no enforcement.** When `enforcing` is false (sunset, valve, abandonment)
-  vault collateral can be taken through the `OP_TRUE` path; `collateral_release` rows show who
-  took it — the cost of not enforcing.
 * A test (`tests/revenue_reconcile.rs`) asserts that Σ `enforcefee` over a block range equals
   Σ `feeZat` of the same blocks' `yed_gettxinfo` rows, likewise `attestfee`, on 37 recorded
   devnet blocks; the same sums were checked live against `/api/revenue`.
@@ -368,11 +401,23 @@ chain-viz calls only the stock read RPCs (`getbestblockhash`, `getblock`, `getbl
 `yed_getprice`, `yed_gethistory`, `yed_getactivation`, `yed_listminers`, `yed_gettag`,
 `yed_gettxinfo`, `yed_decodepayload`, `yed_validaterawtransaction`, `yed_getblockverdict`,
 `yed_listvaults`, `yed_listclaimable`, `yed_listattestors`, `yed_getfeepayee`,
-`yed_getstatehash`). It never calls `yed_setquote`, `yed_addattestation`, any wallet-table
+`yed_getstatehash`) and the vault primitive's read RPCs (`vault_getinfo`, `set_list`,
+`set_getinfo`, `vault_list`; `vault_decodescript` is wrapped but the panel decodes acts and
+selectors itself from `getblock … 2`). It never calls `yed_setquote`, `yed_addattestation`, any wallet-table
 `yed_*`, `generate`, `submitblock`, `sendrawtransaction`, `getblocktemplate` or any wallet RPC
 (plan §4.2). `tests/readonly_gate.rs` greps `src/` for every one of those names — code,
 strings and comments — and fails the build on a match. A user who wants to act is sent to
 YecWallet or the CLI.
+
+## rpcversion
+
+chain-viz models `yed_*` at **rpcversion 5** (the vault upgrade; `KNOWN_RPC_VERSION` in
+`src/rpc.rs`): `yed_getinfo` with `upgrade` and without the enforcement fields,
+`yed_getactivation` as the upgrade object, `yed_getblockverdict` with `verdict`. Unlike the
+wallets, which refuse a node whose `rpcversion` is not exactly theirs (they would build
+transactions from shapes they do not know), chain-viz is an observer and never refuses a node:
+an older node still parses (its retired fields land in `extra`, it has no `upgrade`), and the
+health ribbon shows a warning pill naming the versions when any node is not at 5.
 
 ## The RPC budget
 
@@ -382,7 +427,9 @@ reporting the same tip cost one walk); `getchaintips` on a head move and every t
 `yed_gettag` once per block and `yed_gettxinfo` once per Yellowback transaction, both on the
 one node that claimed it; `yed_gethistory` once, by the leader, at start; `yed_listvaults`
 paged and only when the vault counts change; `getblocksubsidy` once per block;
-`yed_getfeepayee` once per distinct `refHeight`. A ZMQ `hashtx` also wakes the mempool fetch,
+`yed_getfeepayee` once per distinct `refHeight`; on the vault leader (the lowest-id node that
+answers `vault_getinfo`), per block: one `vault_getinfo`, one `set_list`, one `set_getinfo` per
+set (at most 16), and `vault_list` only when `vault_getinfo.statehash` moved. A ZMQ `hashtx` also wakes the mempool fetch,
 once per transaction entering the mempool and once per transaction of a connected block.
 `/api/health.rpcCalls` counts every method per node; `tests/yb_budget.rs` asserts the counts on
 a recorded run, and `qa/soak.sh <url> <pid> <minutes>` samples RSS, `seq` and the RPC rate of a

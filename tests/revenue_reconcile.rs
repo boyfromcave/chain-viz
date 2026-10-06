@@ -9,7 +9,7 @@
 //! `residual`; the coinbase rows must add up to the coinbase outputs.
 
 use chain_viz::classify::find_payload;
-use chain_viz::model::revenue::{Kind, RevenueModel};
+use chain_viz::model::revenue::RevenueModel;
 use chain_viz::model::yellowback::YbTx;
 use chain_viz::rpc::{BlockFull, BlockSubsidy};
 use serde_json::Value;
@@ -21,12 +21,12 @@ fn fixture() -> Value {
 
 /// Feed the fixture into a fresh model the way the collector does; returns the model and the
 /// number of Yellowback txs attributed.
-fn build(f: &Value, enforcing: bool) -> (RevenueModel, usize) {
-    build_with(f, enforcing, |s| s.clone())
+fn build(f: &Value) -> (RevenueModel, usize) {
+    build_with(f, |s| s.clone())
 }
 
 /// As `build`, with each recorded `getblocksubsidy` answer reshaped first.
-fn build_with(f: &Value, enforcing: bool, reshape: impl Fn(&Value) -> Value) -> (RevenueModel, usize) {
+fn build_with(f: &Value, reshape: impl Fn(&Value) -> Value) -> (RevenueModel, usize) {
     let mut m = RevenueModel::new(5000);
     let mut n = 0;
     for entry in f["blocks"].as_array().unwrap() {
@@ -42,8 +42,8 @@ fn build_with(f: &Value, enforcing: bool, reshape: impl Fn(&Value) -> Value) -> 
             let info = &entry["gettxinfo"][&id];
             assert!(info.is_object(), "{}: the recorder found no yed_gettxinfo for a tx the classifier calls Yellowback", id);
             t.apply(info, Some(b.height));
-            let ev = m.on_yb_tx(b.height, &t, enforcing);
-            assert!(m.on_yb_tx(b.height, &t, enforcing).is_empty(), "idempotent");
+            let ev = m.on_yb_tx(b.height, &t);
+            assert!(m.on_yb_tx(b.height, &t).is_empty(), "idempotent");
             let _ = ev;
             n += 1;
         }
@@ -54,7 +54,7 @@ fn build_with(f: &Value, enforcing: bool, reshape: impl Fn(&Value) -> Value) -> 
 #[test]
 fn ledger_sums_equal_the_nodes() {
     let f = fixture();
-    check_sums(&f, build(&f, true));
+    check_sums(&f, build(&f));
 }
 
 /// ycashd 6.20.0's `getblocksubsidy` answers only `{miner, founders, totalblocksubsidy}` (no
@@ -68,7 +68,7 @@ fn ledger_sums_equal_the_nodes_on_6_20_0_subsidy_shape() {
         let (m, fo) = (s["miner"].as_f64().unwrap(), s["founders"].as_f64().unwrap());
         serde_json::json!({"miner": m, "founders": fo, "totalblocksubsidy": m + fo})
     };
-    check_sums(&f, build_with(&f, true, reshape));
+    check_sums(&f, build_with(&f, reshape));
 }
 
 fn check_sums(f: &Value, (m, n): (RevenueModel, usize)) {
@@ -86,7 +86,7 @@ fn check_sums(f: &Value, (m, n): (RevenueModel, usize)) {
     assert_eq!(coinbase, e["coinbaseZat"].as_i64().unwrap(), "coinbase rows add up to the coinbase outputs");
     assert_eq!(t["subsidy"]["zat"], e["minerSubsidyZat"], "the miner claimed the whole subsidy");
     assert_eq!(t["subsidyOther"]["zat"], e["otherSubsidyZat"], "the fund's share is attributed (by its address, or by value on 6.20.0)");
-    assert_eq!(t["collateralRelease"]["zat"], 0, "enforcement on: no release rows");
+    assert!(t.get("collateralRelease").is_none(), "rpcversion 5: no release rows (upgrade plan §6)");
     // every row's payee is an address the node spelled (fee rows) or a coinbase address
     for r in q["rows"].as_array().unwrap() {
         let p = r["payee"].as_str().unwrap();
@@ -108,20 +108,4 @@ fn check_sums(f: &Value, (m, n): (RevenueModel, usize)) {
     assert!((priced["totals"]["enforcefee"]["usd"].as_f64().unwrap() - fee).abs() < 1e-6);
     assert_eq!(priced["priceLabel"], "at pMint");
     assert_eq!(priced["totals"]["enforcefee"]["usdComplete"], true);
-}
-
-#[test]
-fn enforcement_off_attributes_the_release() {
-    // With enforcing = false every vault spend (redeem/claim) in the fixture yields a
-    // collateral_release row to the spend's largest non-fee output.
-    let f = fixture();
-    let (m, _) = build(&f, false);
-    let (from, to) = (f["from"].as_u64().unwrap(), f["to"].as_u64().unwrap());
-    let q = m.query(from, to, "block", &|_| None, &[], &[]);
-    let redeems = f["blocks"].as_array().unwrap().iter().flat_map(|b| b["gettxinfo"].as_object().unwrap().values()).filter(|i| i["type"] == "redeem").count();
-    assert_eq!(q["noEnforcement"]["rows"].as_array().unwrap().len(), redeems);
-    if redeems > 0 {
-        assert!(q["totals"]["collateralRelease"]["zat"].as_i64().unwrap() > 0);
-    }
-    let _ = Kind::CollateralRelease;
 }

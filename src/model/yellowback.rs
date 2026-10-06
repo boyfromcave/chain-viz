@@ -4,7 +4,7 @@
 
 //! The Yellowback health model (plan §3.2.4): per-node `yed_getstats` and `yed_getstatehash`,
 //! one node's (the "leader", the lowest-id healthy Yellowback node) `yed_getprice`,
-//! `yed_getactivation`, `yed_listminers`, `yed_listattestors`, `yed_listvaults`,
+//! `yed_getactivation` (the vault upgrade), `yed_listminers`, `yed_listattestors`, `yed_listvaults`,
 //! `yed_listclaimable`, the `yed_gethistory` timeline, and the Yellowback transactions the
 //! classifier found (`classify.rs`) with their `yed_gettxinfo` / `yed_validaterawtransaction`
 //! answers. Pure state + diffing: the collector feeds it RPC answers and publishes what it
@@ -29,8 +29,10 @@ pub const SNAPSHOT_HISTORY: usize = 2016;
 /// Yellowback transactions kept in `/api/snapshot` (newest first).
 pub const SNAPSHOT_TXS: usize = 500;
 
-/// The halt-mask bits as `yed_getstats.haltMask` names them (`src/yellowback/state.h`).
-pub const HALT_BITS: [&str; 6] = ["NOT_ACTIVE", "NO_PRICE", "PARTICIPATION", "GLOBAL_RATIO", "DIVERGENCE", "ENFORCEMENT"];
+/// The halt-mask bits `yed_getstats.haltMask` can set at rpcversion 5 (`src/yellowback/view.h`).
+/// PARTICIPATION and ENFORCEMENT (ACT-4, ACT-6) are reserved and never set since the vault
+/// upgrade (upgrade plan §6), so they get no timeline lane.
+pub const HALT_BITS: [&str; 4] = ["NOT_ACTIVE", "NO_PRICE", "GLOBAL_RATIO", "DIVERGENCE"];
 
 /// One Yellowback transaction as the UI sees it, on a mempool entry, in a block's `yb.txs`
 /// and in the `yb_tx` event. Field names are `yed_gettxinfo`'s; `wouldBeRejected` is
@@ -135,7 +137,7 @@ impl YbTx {
 /// The Yellowback view of one block (`BlockInfo.yb`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct BlockYb {
-    /// `yed_gettag`: `{found, kind, version, signal, priceMicroUsd, sourceMask, payoutAddress}`
+    /// `yed_gettag`: `{found, kind, version, priceMicroUsd, sourceMask, payoutAddress}`
     /// (the plan's `payoutKey` is `payoutAddress` on the wire; the UI reads that name).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<Value>,
@@ -143,7 +145,7 @@ pub struct BlockYb {
     /// the miner quotes; a block without a tag has no attributable miner here).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub miner: Option<String>,
-    /// Some node rejected this block under enforcement (`rejected_block`).
+    /// Some node refused this block as YED-invalid (`rejected_block`).
     #[serde(default)]
     pub rejected: bool,
     /// The Yellowback transactions in it, in block order.
@@ -304,23 +306,23 @@ impl YellowbackModel {
         }
     }
 
-    /// The extra `yb_state` fields C1's collector does not diff: activation and arming status,
-    /// `attest.armed`.
+    /// The extra `yb_state` fields C1's collector does not diff: the vault upgrade's status
+    /// (`upgrade.status`, rpcversion 5) and the arming status, `attest.armed`.
     pub fn on_info(&self, node: &str, prev: Option<&YedInfo>, info: &YedInfo) -> Vec<Emitted> {
         let Some(prev) = prev else { return Vec::new() };
         let mut out = Vec::new();
+        let up = |i: &YedInfo| i.upgrade.as_ref().map(|u| Value::from(u.status.clone()));
         let pairs = [
-            ("activation.status", prev.activation.get("status"), info.activation.get("status")),
-            ("attest.status", prev.attest.get("status"), info.attest.get("status")),
-            ("attest.armed", prev.attest.get("armed"), info.attest.get("armed")),
-            ("activation.signalCount", prev.activation.get("signalCount"), info.activation.get("signalCount")),
+            ("upgrade.status", up(prev), up(info)),
+            ("attest.status", prev.attest.get("status").cloned(), info.attest.get("status").cloned()),
+            ("attest.armed", prev.attest.get("armed").cloned(), info.attest.get("armed").cloned()),
         ];
         for (field, from, to) in pairs {
-            if from != to && !field.ends_with("signalCount") {
+            if from != to {
                 out.push(Emitted {
                     height: Some(info.height),
                     node: Some(node.to_string()),
-                    kind: EventKind::YbState { field: field.into(), from: from.cloned().unwrap_or(Value::Null), to: to.cloned().unwrap_or(Value::Null) },
+                    kind: EventKind::YbState { field: field.into(), from: from.unwrap_or(Value::Null), to: to.unwrap_or(Value::Null) },
                 });
             }
         }
@@ -566,7 +568,7 @@ fn status_of(v: &Value) -> String {
 }
 
 /// A timeline row in `yed_gethistory`'s shape, from a live `yed_getstats` (the fields both
-/// carry; `signalCount`/`tagged`/`quote`/`activation` are absent from a live row).
+/// carry; `tagged`/`quote`/`blockHash` are absent from a live row).
 pub fn history_row_from_stats(s: &YedStats) -> Value {
     let mut o = Map::new();
     o.insert("height".into(), s.height.into());

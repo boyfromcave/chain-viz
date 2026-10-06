@@ -286,12 +286,12 @@ impl RpcClient {
         self.typed("yed_getblockverdict", json!([hash])).await
     }
     // ---- C3: the Yellowback health model's reads (plan §4.1); shapes stay `Value` where the
-    // UI only relays them. Field names: doc/yellowback-rpc-contract.json rpcversion 4.
+    // UI only relays them. Field names: doc/yellowback-rpc-contract.json rpcversion 5.
     pub async fn yed_getprice(&self, height: Option<u64>) -> Result<Value, RpcError> {
         self.call("yed_getprice", height.map(|h| json!([h])).unwrap_or(json!([]))).await
     }
-    pub async fn yed_getactivation(&self) -> Result<Value, RpcError> {
-        self.call("yed_getactivation", json!([])).await
+    pub async fn yed_getactivation(&self) -> Result<YedUpgrade, RpcError> {
+        self.typed("yed_getactivation", json!([])).await
     }
     pub async fn yed_listminers(&self) -> Result<Vec<Value>, RpcError> {
         self.typed("yed_listminers", json!([])).await
@@ -329,6 +329,26 @@ impl RpcClient {
     /// `yed_getfeepayee refHeight collateralZat`: E(R), the FEE-1 fee and the default payee (C4).
     pub async fn yed_getfeepayee(&self, ref_height: u64, collateral_zat: i64) -> Result<Value, RpcError> {
         self.call("yed_getfeepayee", json!([ref_height, collateral_zat])).await
+    }
+    // ---- the vault primitive's read RPCs (upgrade plan §15.8, ycash-dd doc/vault-rpc.md). No
+    // wallet needed; the act / vault-spend RPCs of the same doc are never called (readonly_gate).
+    pub async fn vault_getinfo(&self) -> Result<VaultInfo, RpcError> {
+        self.typed("vault_getinfo", json!([])).await
+    }
+    /// Every set: `set_getinfo`'s fields without `memberlist`.
+    pub async fn set_list(&self) -> Result<Vec<Value>, RpcError> {
+        self.typed("set_list", json!([])).await
+    }
+    /// One set with its `memberlist`, predicates at the next block.
+    pub async fn set_getinfo(&self, setid: &str) -> Result<Value, RpcError> {
+        self.call("set_getinfo", json!([setid])).await
+    }
+    /// The unspent V and I outputs (no filter: every tag, every set).
+    pub async fn vault_list(&self) -> Result<Vec<Value>, RpcError> {
+        self.typed("vault_list", json!([{}])).await
+    }
+    pub async fn vault_decodescript(&self, hex: &str) -> Result<Value, RpcError> {
+        self.call("vault_decodescript", json!([hex])).await
     }
 }
 
@@ -479,38 +499,45 @@ pub struct TxOut {
     pub script_pub_key: Value,
 }
 
-// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 4) ----
+// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 5) ----
 
+/// The `rpcversion` whose shapes the typed structs below follow. chain-viz is an observer and
+/// keeps parsing an older node (its typed fields default and it has no `upgrade`); the UI says
+/// which nodes report another version rather than refusing them (README, "rpcversion").
+pub const KNOWN_RPC_VERSION: u32 = 5;
+
+/// `yed_getinfo` at rpcversion 5 (the vault upgrade, upgrade plan §6, §15.10): `enforcing`,
+/// `valveTripped`, `sunset`, `abandoned`, `rejectedBlocks`, `suppressedBlocks`, `activation`
+/// and `templatePolicy` are gone; `upgrade` (the `yed_getactivation` object) is new. Anything a
+/// node still sends beyond these fields lands in `extra` and is never read.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct YedInfo {
     pub enabled: bool,
+    /// 5 on the vault upgrade; 0 when absent.
+    #[serde(default)]
+    pub rpcversion: u32,
     pub height: u64,
     pub blockhash: String,
     #[serde(default)]
     pub chain_height: u64,
     pub healthy: bool,
-    pub enforcing: bool,
-    #[serde(default)]
-    pub valve_tripped: bool,
-    #[serde(default)]
-    pub sunset: bool,
-    #[serde(default)]
-    pub abandoned: bool,
-    /// rpcversion 4 (hardening H-1): a mint at an unarmed reference height is VOID
-    /// (`mint-halted-unarmed`). Absent from an rpcversion-3 node, so it defaults to `false`.
+    /// rpcversion 4 (hardening H-1): a mint at an unarmed reference height is invalid
+    /// (`mint-halted-unarmed`).
     #[serde(default)]
     pub mint_requires_armed: bool,
-    #[serde(default)]
-    pub rejected_blocks: u64,
-    #[serde(default)]
-    pub suppressed_blocks: u64,
     #[serde(default)]
     pub unhealthy_reason: String,
     #[serde(default)]
     pub network: String,
+    /// The upgrade's activation height (U-22).
+    #[serde(default, deserialize_with = "null_default")]
+    pub start_height: u64,
     #[serde(default)]
-    pub activation: Value,
+    pub supply_cap_reached: bool,
+    /// rpcversion 5: the vault upgrade. `None` on an older node.
+    #[serde(default)]
+    pub upgrade: Option<YedUpgrade>,
     #[serde(default)]
     pub attest: Value,
     #[serde(default)]
@@ -519,6 +546,28 @@ pub struct YedInfo {
     pub params: Value,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+/// `yed_getactivation` and `yed_getinfo.upgrade` (rpcversion 5): the vault network upgrade YED
+/// is the rule module of. `status` is `active` from `activationHeight`, else `pending`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct YedUpgrade {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub branch_id: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default, deserialize_with = "null_default")]
+    pub activation_height: i64,
+    /// The network's YED attestor set (a primitive signer set, P4-b).
+    #[serde(default, deserialize_with = "null_default")]
+    pub attestor_set_id: String,
+    #[serde(default)]
+    pub claim_delay: u64,
+    #[serde(default)]
+    pub height: u64,
 }
 
 /// `PriceOrNull` fields (`src/rpc/yellowback.cpp`): the node renders an undefined price or
@@ -577,8 +626,9 @@ pub struct YedStats {
 pub struct YedBlockVerdict {
     #[serde(default)]
     pub block_invalid: bool,
+    /// rpcversion 5: the first invalid transaction's verdict, `"ok"` when none.
     #[serde(default)]
-    pub enforcement_on: bool,
+    pub verdict: String,
     #[serde(default)]
     pub reason: String,
     #[serde(default)]
@@ -592,6 +642,37 @@ pub struct YedStateHash {
     pub height: u64,
     pub blockhash: String,
     pub statehash: String,
+}
+
+/// `vault_getinfo` (doc/vault-rpc.md): the upgrade's activation and branch ID, the counts and the
+/// set-state hash (`statehash`, equal on two nodes on the same chain).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct VaultInfo {
+    #[serde(default)]
+    pub branchid: String,
+    /// -1 when the upgrade is not scheduled.
+    #[serde(default)]
+    pub activationheight: i64,
+    /// Active at the next block.
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub height: u64,
+    /// `{hash, height}` of the block the set state is at; null before the first active block.
+    #[serde(default)]
+    pub dbtip: Value,
+    #[serde(default)]
+    pub sets: u64,
+    #[serde(default)]
+    pub vaults: u64,
+    #[serde(default)]
+    pub intents: u64,
+    #[serde(default)]
+    pub lockedvalue: f64,
+    #[serde(default)]
+    pub statehash: String,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 /// Per-node counters as `/api/health` reports them.
@@ -675,21 +756,52 @@ mod tests {
         let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rpc-contract-samples.json")).unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
         let info: YedInfo = serde_json::from_value(v["yed_getinfo"].clone()).unwrap();
-        assert_eq!(info.height, 331);
-        assert_eq!(info.rejected_blocks, 0);
-        assert!(!info.mint_requires_armed && !info.extra.contains_key("mintRequiresArmed"));
+        assert_eq!((info.height, info.rpcversion, info.start_height), (331, KNOWN_RPC_VERSION, 103));
+        let up = info.upgrade.as_ref().expect("rpcversion 5 carries the upgrade object");
+        assert_eq!((up.name.as_str(), up.branch_id.as_str(), up.status.as_str(), up.activation_height, up.claim_delay), ("Vault", "6d5b7a31", "active", 103, 10));
+        assert_eq!(up.attestor_set_id, info.params["attestorSetId"].as_str().unwrap());
+        for gone in ["enforcing", "valveTripped", "sunset", "abandoned", "rejectedBlocks", "suppressedBlocks", "activation", "templatePolicy"] {
+            assert!(!info.extra.contains_key(gone), "rpcversion 5 has no {}", gone);
+        }
+        // yed_getactivation is the same object
+        let act: YedUpgrade = serde_json::from_value(v["yed_getactivation"].clone()).unwrap();
+        assert_eq!(&act, up);
+        // an rpcversion-4 node still parses (chain-viz observes, never refuses): no upgrade, its
+        // retired fields only in `extra`
         let mut v4 = v["yed_getinfo"].clone();
-        v4["mintRequiresArmed"] = true.into();
-        assert!(serde_json::from_value::<YedInfo>(v4).unwrap().mint_requires_armed);
-        let mut v3 = v["yed_getinfo"].clone();
-        v3.as_object_mut().unwrap().remove("mintRequiresArmed");
-        v3["rpcversion"] = 3.into();
-        assert!(!serde_json::from_value::<YedInfo>(v3).unwrap().mint_requires_armed, "an rpcversion-3 node still parses");
+        let o = v4.as_object_mut().unwrap();
+        o.remove("upgrade");
+        o.insert("rpcversion".into(), 4.into());
+        o.insert("enforcing".into(), true.into());
+        o.insert("activation".into(), json!({"status": "active", "signalCount": 64}));
+        let old: YedInfo = serde_json::from_value(v4).unwrap();
+        assert!(old.upgrade.is_none() && old.rpcversion == 4 && old.extra.contains_key("enforcing"));
         let stats: YedStats = serde_json::from_value(v["yed_getstats"].clone()).unwrap();
         assert_eq!(stats.p_mint, 1990000);
         assert_eq!(stats.supply_cents, 250000);
         let verdict: YedBlockVerdict = serde_json::from_value(v["yed_getblockverdict"].clone()).unwrap();
         assert!(verdict.block_invalid);
+        assert_eq!(verdict.verdict, "vault-spend-short-burn");
+        assert!(!verdict.extra.contains_key("enforcementOn"));
         assert_eq!(verdict.transactions.len(), 1);
+    }
+
+    /// The vault primitive's read RPCs as a live devnet on the upgrade answered them.
+    #[test]
+    fn vault_shapes_parse() {
+        let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rpc-contract-samples.json")).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        let info: VaultInfo = serde_json::from_value(v["vault_getinfo"].clone()).unwrap();
+        assert_eq!((info.branchid.as_str(), info.activationheight, info.active), ("6d5b7a31", 103, true));
+        assert_eq!(info.statehash.len(), 64);
+        assert!(info.extra.is_empty(), "every vault_getinfo field is typed: {:?}", info.extra.keys().collect::<Vec<_>>());
+        let sets: Vec<Value> = serde_json::from_value(v["set_list"].clone()).unwrap();
+        assert!(sets.iter().all(|s| s.get("memberlist").is_none() && s["setid"].is_string() && s["ratelimitbps"].is_u64()));
+        assert!(v["set_getinfo"]["memberlist"].as_array().is_some_and(|m| !m.is_empty() && m[0]["key"].is_string() && m[0]["live"].is_boolean()));
+        let list: Vec<Value> = serde_json::from_value(v["vault_list"].clone()).unwrap();
+        assert!(list.iter().any(|e| e["kind"] == "intent" && e["matureheight"].is_u64() && e["origin"].is_string() && e["cancellable"].is_boolean()));
+        assert!(list.iter().any(|e| e["kind"] == "vault" && e["ownerheight"].is_u64() && e["outpoint"].is_string()));
+        assert_eq!(v["vault_decodescript_intent"]["type"], "intent");
+        assert_eq!(v["vault_decodescript_vault"]["type"], "vault");
     }
 }

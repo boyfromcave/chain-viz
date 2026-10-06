@@ -2,7 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://www.opensource.org/licenses/mit-license.php .
 
-//! axum: `GET /` (the embedded `ui/`), `/api/health`, `/api/snapshot`, `/api/events?since=`,
+//! axum: `GET /` (the embedded `ui/`), `/api/health`, `/api/snapshot`, `/api/yellowback`,
+//! `/api/revenue`, `/api/vaults`, `/api/events?since=`,
 //! `WS /ws`. Binds loopback by default (`--listen`). Nothing in a response carries a node URL
 //! or credential.
 
@@ -98,6 +99,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/snapshot", get(snapshot))
         .route("/api/yellowback", get(yellowback))
         .route("/api/revenue", get(revenue))
+        .route("/api/vaults", get(vaults))
         .route("/api/events", get(events))
         .route("/ws", get(ws));
     let r = match &state.public {
@@ -181,6 +183,21 @@ async fn yellowback(State(s): State<Arc<AppState>>) -> Json<Value> {
     s.finish(v)
 }
 
+/// `GET /api/vaults`: the vault primitive's view (`model/vault.rs`): `vault_getinfo`, the signer
+/// sets with their members and rate epochs, the V/I outputs by tag, spends (cancels included)
+/// and acts, plus the tip it was taken at.
+async fn vaults(State(s): State<Arc<AppState>>) -> Json<Value> {
+    let m = s.model.read().await;
+    let mut v = serde_json::to_value(m.vault.snapshot()).unwrap_or(Value::Null);
+    if let Some(o) = v.as_object_mut() {
+        o.insert("seq".into(), s.bus.last_seq().into());
+        o.insert("tip".into(), m.chain.majority().map(|h| json!({"height": h.height, "hash": h.hash})).unwrap_or(Value::Null));
+        o.insert("leader".into(), json!(m.vault_leader()));
+    }
+    drop(m);
+    s.finish(v)
+}
+
 #[derive(Deserialize, Default)]
 struct RevenueQuery {
     from: Option<u64>,
@@ -201,7 +218,6 @@ async fn revenue(State(s): State<Arc<AppState>>, Query(q): Query<RevenueQuery>) 
     if let Some(o) = v.as_object_mut() {
         o.insert("seq".into(), s.bus.last_seq().into());
         o.insert("tip".into(), m.chain.majority().map(|h| json!({"height": h.height, "hash": h.hash})).unwrap_or(Value::Null));
-        o.insert("enforcing".into(), json!(m.yed_info.values().map(|i| i.enforcing).collect::<Vec<_>>()));
         o.insert("pMintNow".into(), m.yellowback.stats.get(m.leader().as_deref().unwrap_or("")).map(|st| st.p_mint).into());
     }
     drop(m);
