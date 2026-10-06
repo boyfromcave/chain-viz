@@ -1,93 +1,220 @@
-# chain-viz CI: build, test, clippy (-D warnings) and fmt on Linux and macOS with the exact Rust
-# release rust-toolchain.toml pins; `cargo deny check` (advisories, licences, sources) and
-# `cargo audit` on every run; a tag `v*` also builds release binaries (linux x86_64, macOS
-# arm64) and attaches them to the GitHub release (plan C7, "release build in CI").
+# chain-viz CI (plan C7; workspace CI/CD design 2026-10-06).
+#
+# Push / PR tier (every push and pull request on the branches below):
+#   check (ubuntu, macos)  fmt, clippy (-D warnings), build, test with the exact Rust release
+#                          rust-toolchain.toml pins
+#   audit (ubuntu)         cargo deny (advisories, licences, sources) + cargo audit
+# Tags: release.yml (a tag `v*` builds the release binaries; no cache there, zizmor cache-poisoning).
+# Nightly tier (workflow_dispatch with tier=nightly; component repos carry no schedule, the node
+# lines do):
+#   devnet (ubuntu)        a five-node regtest devnet of the node line matching this branch, chain-viz
+#                          started by the devnet tool, the UI smoke (qa/ui-smoke.mjs) against the
+#                          live instance. The smoke needs live data: on the recorded fixture
+#                          session (--replay tests/fixtures/session-reorg2.jsonl) its revenue and
+#                          vault checks fail, so it is not a push-tier step.
 #
 # Audit 2026-10-01: every action is pinned to a commit SHA (H-15; the comment carries the tag it
 # was taken from — bump both together), the toolchain is the exact pinned release (H-16/I-8),
-# the workflow token is read-only except in the release job (H-15), cargo-deny/cargo-audit are
-# installed at exact versions (I-7).
+# the workflow token is read-only (in release.yml only the publish job writes, H-15), cargo-deny/
+# cargo-audit are installed at exact versions (I-7).
 name: ci
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
+    # The one branch list: harden/yellowback (P1 hardening), upgrade/vault (the network upgrade),
+    # main (the branch of record, AGENTS.md rule 2).
+    branches: &branches [main, harden/yellowback, upgrade/vault]
   pull_request:
+    branches: *branches
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "push = the push/PR jobs only; nightly = also the devnet job"
+        type: choice
+        options: [push, nightly]
+        default: push
+      node_run_id:
+        description: "nightly: a run id of the node line's yellowback-tests workflow to take ycashd from (empty = the newest run on the matching branch that has the artifact)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
   RUST_TOOLCHAIN: 1.91.0
+  CARGO_DENY_VERSION: 0.20.2
+  CARGO_AUDIT_VERSION: 0.22.2
 
 jobs:
   check:
+    name: check (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy, rustfmt
+      # Keyed by rust-cache on the rustc version, Cargo.lock/Cargo.toml and the job; restored by the
+      # same prefix only. Saved from pushes, not from pull requests (a PR's cache is PR-scoped).
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo fmt --check
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - name: cargo fmt --check
+        if: runner.os == 'Linux'
+        run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo build --locked
       - run: cargo test --locked
-      - run: cargo clippy --all-targets --locked -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The two tools at exact versions, cached by exact key (no restore-keys): a hit skips the
+      # ~6 min source build.
+      - name: cache cargo-deny and cargo-audit
+        id: tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          cache-all-crates: true
-      - run: cargo install cargo-deny --version 0.20.2 --locked
-      - run: cargo install cargo-audit --version 0.22.2 --locked
+          path: |
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-audit
+          key: cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-${{ env.CARGO_DENY_VERSION }}-audit-${{ env.CARGO_AUDIT_VERSION }}
+      - name: install cargo-deny and cargo-audit
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked
+          cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
       # deny.toml: RustSec advisories (yanked crates included), licence allow-list, crates.io only.
       - run: cargo deny --locked check
       # Its own database path: cargo-deny 0.20 clones into ~/.cargo/advisory-db/<hash>, which cargo-audit then refuses as a non-empty clone target.
       - run: cargo audit --deny warnings --db "$RUNNER_TEMP/advisory-db"
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [check, audit]
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset: chain-viz-linux-x86_64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            asset: chain-viz-macos-arm64
-    runs-on: ${{ matrix.os }}
-    # The only job that writes: it uploads the release assets.
-    permissions:
-      contents: write
+  # Nightly tier, on demand. A devnet needs a ycashd: building one here costs > 60 min uncached
+  # (depends tree, Rust, C++), downloading the node line's own CI build artifact costs seconds, so
+  # this job downloads (NODE_ARTIFACT: ycashd and ycash-cli at the archive root, uploaded by the
+  # node line's yellowback-tests build job). Node branch: upgrade/vault -> upgrade/vault (whose
+  # devnet tool activates the Vault upgrade itself), harden/yellowback -> harden/yellowback,
+  # anything else -> ycash-dd's branch of record. The devnet tool lives in the node tree and needs
+  # its Python test framework, so the tree is checked out whole beside chain-viz, the workspace
+  # layout the tool expects (ws/ycash-dd, ws/chain-viz).
+  devnet:
+    if: github.event_name == 'workflow_dispatch' && inputs.tier == 'nightly'
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NODE_REPO: boyfromcave/ycash-dd
+      NODE_OF_RECORD: feature/yellowback-price-attest
+      NODE_ARTIFACT: ycashd-linux-x86_64
+      NODE_RUN_ID: ${{ inputs.node_run_id }}
+      REF_NAME: ${{ github.ref_name }}
+      DEVNET_SEED: 61
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: ws/chain-viz
+          persist-credentials: false
+      - name: node branch for this run
+        id: node
+        run: |
+          case "$REF_NAME" in
+            upgrade/vault|harden/yellowback) branch=$REF_NAME ;;
+            *) branch=$NODE_OF_RECORD ;;
+          esac
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "node line $NODE_REPO @ $branch"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ env.NODE_REPO }}
+          ref: ${{ steps.node.outputs.branch }}
+          path: ws/ycash-dd
+          persist-credentials: false
+      - name: download ycashd from the node line's CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_BRANCH: ${{ steps.node.outputs.branch }}
+        run: |
+          dst="$GITHUB_WORKSPACE/ws/ycash-dd/src"
+          if [ -n "$NODE_RUN_ID" ]; then runs=$NODE_RUN_ID; else
+            runs=$(gh run list -R "$NODE_REPO" -w yellowback-tests.yml -b "$NODE_BRANCH" -L 20 --json databaseId -q '.[].databaseId')
+          fi
+          for r in $runs; do
+            if gh run download "$r" -R "$NODE_REPO" -n "$NODE_ARTIFACT" -D "$dst" 2>/dev/null; then
+              echo "ycashd from $NODE_REPO run $r"; break
+            fi
+          done
+          test -f "$dst/ycashd" || { echo "::error::no artifact $NODE_ARTIFACT in $NODE_REPO runs on $NODE_BRANCH ($runs)"; exit 1; }
+          chmod +x "$dst/ycashd" "$dst/ycash-cli"
+      - name: cache zcash params
+        id: params
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.zcash-params
+          key: zcash-params-${{ hashFiles('ws/ycash-dd/zcutil/fetch-params.sh') }}
+      - if: steps.params.outputs.cache-hit != 'true'
+        run: ws/ycash-dd/zcutil/fetch-params.sh
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      # The workspace venv's packages (workspace requirements.txt) and its pyblake2 shim
+      # (scripts/bootstrap.sh), which the inherited test framework imports.
+      - name: devnet venv
+        run: |
+          python -m venv ws/.venv
+          ws/.venv/bin/pip install --quiet "pyasyncore>=1.0.4" "pyzmq>=25" "requests>=2.31" "simplejson>=3.19"
+          site=$(ws/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          printf '%s\n' 'from hashlib import blake2b, blake2s  # noqa: F401' > "$site/pyblake2.py"
+          ws/.venv/bin/python -c 'import asyncore, zmq, requests, simplejson, pyblake2'
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo build --release --locked --target ${{ matrix.target }}
-      - run: |
-          cp target/${{ matrix.target }}/release/chain-viz ${{ matrix.asset }}
-          tar czf ${{ matrix.asset }}.tar.gz ${{ matrix.asset }}
-          shasum -a 256 ${{ matrix.asset }}.tar.gz > ${{ matrix.asset }}.tar.gz.sha256
-      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: |
-            ${{ matrix.asset }}.tar.gz
-            ${{ matrix.asset }}.tar.gz.sha256
+          workspaces: ws/chain-viz
+          save-if: false
+      - run: cargo build --release --locked
+        working-directory: ws/chain-viz
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: devnet up (chain-viz started by the devnet tool), UI smoke, down
+        working-directory: ws/ycash-dd
+        run: |
+          export YELLOWBACK_DEVNET_DIR="$RUNNER_TEMP/devnet" YELLOWBACK_DEVNET_PORTSEED=$DEVNET_SEED
+          export BITCOIND="$PWD/src/ycashd" CHAINVIZ_BIN="$GITHUB_WORKSPACE/ws/chain-viz/target/release/chain-viz"
+          dn() { ../.venv/bin/python contrib/yellowback/devnet/yellowback-devnet "$@"; }
+          trap 'dn down || true' EXIT
+          dn up --no-attest --lean --no-sim --force
+          dn status
+          url="http://127.0.0.1:$((32680 + DEVNET_SEED % 88))"
+          dn mine 3
+          node ../chain-viz/qa/ui-smoke.mjs "$url"
+      - name: upload devnet logs on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: chain-viz-devnet-logs
+          path: ${{ runner.temp }}/devnet/**/*.log
+          if-no-files-found: ignore
