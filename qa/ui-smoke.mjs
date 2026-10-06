@@ -94,8 +94,9 @@ dots === s.mempool.count ? ok(`mempool plot: ${dots} dots for ${s.mempool.count}
 console.log('     ', ids.get('mempool-stats').children.map((t) => t.children[0].textContent + ' ' + t.children[1].textContent).join(' | '));
 ok(`event log: ${ids.get('event-log').children.length} rows, ${ids.get('event-filter').children.length} kinds in the filter`);
 console.log('     header:', ['chain-name', 'node-count', 'tip', 'since', 'spacing', 'conn'].map((i) => `${i}=${ids.get(i).textContent}`).join(' '), 'since-level', ids.get('since').dataset.level);
-// revenue panel (C4): its tables follow /api/revenue's groups
-{
+// revenue panel (C4): its tables follow /api/revenue's groups (served mode only: an export
+// carries no /api/revenue, static.js answers it with null)
+if (!isStatic) {
   const rv = await (await fetch(base + '/api/revenue?by=payoutKey')).json();
   const el = (id) => document.getElementById(id);   // the panel registers its own ids (it builds its section itself)
   const pools = el('rv-pools').children.length;
@@ -108,8 +109,8 @@ console.log('     header:', ['chain-name', 'node-count', 'tip', 'since', 'spacin
   console.log('     ', el('rv-cf').textContent.slice(0, 160));
 }
 // vault primitive panel (P6): its tables follow /api/vaults (rows + the header row; an empty
-// table holds one placeholder row instead)
-if (!isStatic) {
+// table holds one placeholder row instead); an export answers /api/vaults from snapshot.vault
+{
   const vp = await (await fetch(base + '/api/vaults')).json();
   const el = (id) => document.getElementById(id);
   const rows = (id, n, cap = Infinity) => { const got = el(id).children.length, want = 1 + Math.max(1, Math.min(n, cap)); return got === want ? ok(`vaults: ${id} ${got - 1} row(s) for ${n}`) : fail(`vaults: ${id} ${got} rows != ${want}`); };
