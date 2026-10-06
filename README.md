@@ -172,7 +172,8 @@ per call and at most 64 WebSocket connections are open at once, `--public` or no
 * **`GET /api/yellowback`** — the health panel's slice, fetched once per block:
   `{seq, tip, yedInfo, yellowback{leader, stats{<node>: yed_getstats}, statehash{<node>},
   statehash_agree, price, attestPrices, activation, haltBits, miners[], attestors[], vaults[],
-  claimable[], history[], historyFrom, txs[], rejected[], mockPrice},
+  claimable[], history[], historyFrom, txs[], rejected[], mockPrice,
+  noPrice{window, fromHeight, toHeight, covered, blocks, hours}},
   blocks[{hash,height,time,txCount,yb}]}`.
 * **`GET /api/revenue?from=<h>&to=<h>&by=payoutKey|attestor|block`** — the ledger rolled up
   over `[from, to]` (default: the whole kept window):
@@ -211,14 +212,19 @@ policy), *partial* = present on some nodes but not all (propagation, or a stock 
 what it does not understand).
 
 **Yellowback health** — a state ribbon (`healthy`, `enforcing`, `valveTripped`, `sunset`,
-`abandoned`, activation `SIGNALING → LOCKED_IN → ACTIVE`, arming `UNARMED → TRIGGERED →
-ARMED`); a timeline by height with lanes for activation, arming, the six halt-mask bits and
+`abandoned`, `mintRequiresArmed` (rpcversion 4, hardening H-1), activation `SIGNALING → LOCKED_IN →
+ACTIVE`, arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
+`UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
+reports `mintingAllowed` false and `mintableClasses` empty) — and a NO_PRICE-hours counter: the
+blocks with the NO_PRICE bit among the timeline's last 1,152 (one day at 75 s), as hours at the
+target spacing, with how many of those heights the timeline holds); a timeline by height with lanes for activation, arming, the six halt-mask bits and
 rejected-block ticks, backfilled from `yed_gethistory`; prices (`pFast`/`pMid`/`pSlow`, the
 `pMint`–`pClaim` band, the fed price dotted on the devnet, window fill bars); supply and
 collateral tiles with the global ratio against the 110 % and 105 % lines; a vault scatter
 (ratio × blocks to `claimHeight`, claimable vaults ringed); the attestor table; state-hash
 agreement per node and the rejected/suppressed counters with verdicts; the Yellowback
-transaction table. Two ratios on this panel are priced differently by the node on purpose:
+transaction table (a void mint's verdict, e.g. `mint-halted-unarmed`, carries an explanation on
+hover; the void tile counts the listed VOID vaults whose `voidReason` is `mint-halted-unarmed`). Two ratios on this panel are priced differently by the node on purpose:
 the global-ratio tile is at `pMint`, the scatter at `pClaim`, and they disagree for about one
 slow window after a price move (plan C-F9).
 

@@ -1,5 +1,5 @@
 {
- "_source": "ycash-dd/doc/yellowback-rpc-contract.json rpcversion 3, the \"returns\" samples",
+ "_source": "ycash-dd/doc/yellowback-rpc-contract.json rpcversion 4, the \"returns\" samples",
  "yed_getblockverdict": {
   "blockInvalid": true,
   "enforcementOn": true,
@@ -58,6 +58,7 @@
    "registered": true,
    "signal": true
   },
+  "mintRequiresArmed": false,
   "network": "regtest",
   "params": {
    "abandonBlocks": 128,
@@ -139,9 +140,10 @@
   "protectedByIndex": true,
   "rebuilt": false,
   "rejectedBlocks": 0,
-  "rpcversion": 3,
+  "rpcversion": 4,
   "startHeight": 1,
   "sunset": false,
+  "supplyCapReached": false,
   "suppressedBlocks": 0,
   "templatePolicy": "strict",
   "unhealthyReason": "",

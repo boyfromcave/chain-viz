@@ -98,16 +98,44 @@ function renderRibbon(y, info, stats, d) {
     suspended ? pill('enforcement SUSPENDED (ACT-6)', true, 'critical')
               : pill(info.enforcing ? 'enforcing' : 'not enforcing', info.enforcing, info.enforcing ? 'good' : 'warning'),
     pill('valve tripped', info.valveTripped, 'critical'), pill('sunset', info.sunset, 'warning'), pill('abandoned', info.abandoned, 'critical'),
+    // rpcversion 4 (hardening H-1): with mintRequiresArmed a mint at an unarmed R confirms VOID (mint-halted-unarmed)
+    pill(info.mintRequiresArmed ? 'mint requires ARMED' : 'mint without ARMED', !!info.mintRequiresArmed, 'good'),
     h('span', { class: 'yb-sep' }),
     h('span', { class: 'yb-state' }, h('b', {}, 'activation'), ` ${(act.status || '?').toUpperCase()} `, h('span', { class: 'muted' }, `${act.signalCount ?? '–'}/${act.window ?? '–'} signals · lock-in ${act.lockInHeight ?? '–'} · active ${act.activateHeight ?? '–'}`)),
     h('span', { class: 'yb-state' }, h('b', {}, 'arming'), ` ${att.status || '?'} `, h('span', { class: 'muted' }, `${att.seatedCount ?? '–'} seated · pool ${att.poolSize ?? '–'} (fresh ${att.poolFresh ?? '–'}) · trigger ${att.triggerHeight ?? '–'} · arm ${att.armHeight ?? '–'}`)),
-    h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, stats?.haltMask?.length ? stats.haltMask.join(' ') : (stats?.mintableClasses ? 'classes ' + stats.mintableClasses.join('') : ''))),
+    h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, mintingWhy(info, stats))),
+    noPriceState(y.noPrice),
     h('span', { class: 'yb-state' }, h('b', {}, 'index'), ` ${info.height ?? '–'}`, h('span', { class: 'muted' }, ` of ${info.chainHeight ?? '–'} · leader node ${y.leader ?? '–'}`)),
   );
   const alarm = $('yb-alarm');
   if (y.statehash_agree === false) { alarm.hidden = false; clear(alarm).append(h('b', {}, 'STATE HASH MISMATCH'), ` healthy nodes on the same tip disagree on yed_getstatehash: `, ...Object.entries(y.statehash).map(([n, v]) => h('code', {}, `${n}:${v.statehash.slice(0, 10)} `))); }
   else alarm.hidden = true;
 }
+
+// Why minting is halted, or which classes are open. An unarmed halt (H-1) sets no halt-mask bit:
+// the node reports mintingAllowed false and mintableClasses empty while the tip is not ARMED.
+function mintingWhy(info, stats) {
+  if (!stats) return '';
+  if (stats.haltMask?.length) return stats.haltMask.join(' ');
+  if (!stats.mintingAllowed && info.mintRequiresArmed && info.attest && info.attest.armed === false) return 'UNARMED (mint-halted-unarmed)';
+  if (!stats.mintingAllowed && info.supplyCapReached) return 'supply cap reached';
+  if (stats.mintableClasses) return stats.mintableClasses.length ? 'classes ' + stats.mintableClasses.join('') : 'no class mintable';
+  return '';
+}
+// The NO_PRICE-hours counter: blocks with the NO_PRICE halt bit over the last window of the timeline.
+function noPriceState(np) {
+  if (!np || !np.covered) return h('span', { class: 'yb-state' }, h('b', {}, 'NO_PRICE'), ' –');
+  const short = np.covered < np.window ? ` · timeline covers ${np.covered}` : '';
+  return h('span', { class: 'yb-state', title: `heights ${np.fromHeight}–${np.toHeight}; hours at the 75 s target spacing` }, h('b', {}, 'NO_PRICE'), ` ${np.hours.toFixed(1)} h `, h('span', { class: 'muted' }, `${np.blocks} of the last ${np.window} blocks${short}`));
+}
+// The node's verdict ids worth a sentence in the transaction table's tooltip.
+const VERDICT_TEXT = {
+  'mint-halted-unarmed': 'VOID: the mint\'s reference height was not ARMED while mintRequiresArmed (hardening H-1, MINT-4)',
+  'mint-halted-no-price': 'VOID: no price at the reference height (MINT-4)',
+  'mint-halted-participation': 'VOID: participation or enforcement halt at the reference height (MINT-4)',
+  'mint-halted-global-ratio': 'VOID: global-ratio halt and the class minimum is below the recapitalisation floor (MINT-4)',
+  'mint-halted-divergence': 'VOID: price divergence halt at the reference height (MINT-4)',
+};
 
 // ---------------------------------------------------------------- timeline lanes
 const LM = { l: 92, r: 12, t: 6, b: 18 };
@@ -246,7 +274,7 @@ function renderSupply(y, stats) {
 // ---------------------------------------------------------------- vault scatter
 function renderVaults(y, stats, d) {
   const tiles = clear($('yb-vault-tiles')); if (!stats) return;
-  tiles.append(tile('active', fmtInt(stats.activeVaults)), tile('claimable', fmtInt((y.claimable || []).length), '', (y.claimable || []).length > 0), tile('void', fmtInt(stats.voidVaults)), tile('closed', fmtInt(stats.closedVaults)), tile('claimed', fmtInt(stats.claimedVaults)));
+  tiles.append(tile('active', fmtInt(stats.activeVaults)), tile('claimable', fmtInt((y.claimable || []).length), '', (y.claimable || []).length > 0), tile('void', fmtInt(stats.voidVaults), voidSub(y)), tile('closed', fmtInt(stats.closedVaults)), tile('claimed', fmtInt(stats.claimedVaults)));
   const el = clear($('yb-vaults')); const tip = d.tip?.height ?? stats.height, pClaim = stats.pClaim;
   const claimable = new Set((y.claimable || []).map((c) => c.vault));
   const vs = (y.vaults || []).filter((v) => v.status === 'ACTIVE' && v.mintedCents > 0 && v.collateralZat > 0).map((v) => ({ v, ratio: (v.collateralZat * pClaim) / (v.mintedCents * 1e8), toClaim: v.claimHeight - tip, key: `${v.txid}:${v.vout}` }));
@@ -271,6 +299,12 @@ function renderVaults(y, stats, d) {
   const lg = clear($('yb-vault-legend'));
   for (const c of ['A', 'B', 'C']) lg.append(h('span', {}, h('i', { style: `background:${cls[c]}` }), `class ${c}`));
   lg.append(h('span', {}, h('i', { class: 'ring' }), 'claimable (yed_listclaimable)'), h('span', { class: 'muted' }, `y = collateral ÷ debt at pClaim ${usd(pClaim)} (claims use pClaim; the global ratio tile uses pMint ${usd(stats.pMint)}); dashed 110 % / 105 %`));
+}
+
+// The void tile's sub-line: how many listed VOID vaults are unarmed mints (H-1).
+function voidSub(y) {
+  const unarmed = (y.vaults || []).filter((v) => v.status === 'VOID' && v.voidReason === 'mint-halted-unarmed').length;
+  return unarmed ? `${unarmed} unarmed (H-1)` : '';
 }
 
 // ---------------------------------------------------------------- attestors
@@ -311,7 +345,7 @@ function renderTxs(y, s, d) {
       h('td', {}, tx.height ? String(tx.height) : h('span', { class: 'muted' }, 'mempool')),
       h('td', { class: 'mono' }, tx.txid.slice(0, 12) + '…'),
       h('td', {}, h('span', { class: 'yb-type', style: `--c:${typeColour(tx.type, tx.path)}` }, txLabel(tx))),
-      h('td', {}, tx.path || ''), h('td', {}, h('span', { class: 'yb-status', 'data-s': bad ? 'BAD' : 'OK' }, tx.verdict || (tx.wouldBeRejected === undefined ? '…' : ''))),
+      h('td', {}, tx.path || ''), h('td', {}, h('span', { class: 'yb-status', 'data-s': bad ? 'BAD' : 'OK', title: VERDICT_TEXT[tx.verdict] || '' }, tx.verdict || (tx.wouldBeRejected === undefined ? '…' : ''))),
       h('td', {}, yed(tx.yedIn)), h('td', {}, yed(tx.yedOut)), h('td', {}, yed(tx.burned)), h('td', {}, yec(tx.feeZat)), h('td', { class: 'mono' }, tx.payee ? tx.payee.slice(0, 10) + '…' : ''),
       h('td', {}, tx.attestFeeZat ? yec(tx.attestFeeZat) : ''), h('td', { class: 'mono' }, tx.attestPayee ? tx.attestPayee.slice(0, 10) + '…' : ''),
       h('td', {}, mp ? (tx.wouldBeRejected === true ? h('b', { class: 'yb-bad' }, 'would be rejected') : tx.wouldBeRejected === false ? 'would confirm' : '') : '')));

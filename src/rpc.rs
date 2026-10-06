@@ -286,7 +286,7 @@ impl RpcClient {
         self.typed("yed_getblockverdict", json!([hash])).await
     }
     // ---- C3: the Yellowback health model's reads (plan §4.1); shapes stay `Value` where the
-    // UI only relays them. Field names: doc/yellowback-rpc-contract.json rpcversion 3.
+    // UI only relays them. Field names: doc/yellowback-rpc-contract.json rpcversion 4.
     pub async fn yed_getprice(&self, height: Option<u64>) -> Result<Value, RpcError> {
         self.call("yed_getprice", height.map(|h| json!([h])).unwrap_or(json!([]))).await
     }
@@ -479,7 +479,7 @@ pub struct TxOut {
     pub script_pub_key: Value,
 }
 
-// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 3) ----
+// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 4) ----
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -497,6 +497,10 @@ pub struct YedInfo {
     pub sunset: bool,
     #[serde(default)]
     pub abandoned: bool,
+    /// rpcversion 4 (hardening H-1): a mint at an unarmed reference height is VOID
+    /// (`mint-halted-unarmed`). Absent from an rpcversion-3 node, so it defaults to `false`.
+    #[serde(default)]
+    pub mint_requires_armed: bool,
     #[serde(default)]
     pub rejected_blocks: u64,
     #[serde(default)]
@@ -673,6 +677,14 @@ mod tests {
         let info: YedInfo = serde_json::from_value(v["yed_getinfo"].clone()).unwrap();
         assert_eq!(info.height, 331);
         assert_eq!(info.rejected_blocks, 0);
+        assert!(!info.mint_requires_armed && !info.extra.contains_key("mintRequiresArmed"));
+        let mut v4 = v["yed_getinfo"].clone();
+        v4["mintRequiresArmed"] = true.into();
+        assert!(serde_json::from_value::<YedInfo>(v4).unwrap().mint_requires_armed);
+        let mut v3 = v["yed_getinfo"].clone();
+        v3.as_object_mut().unwrap().remove("mintRequiresArmed");
+        v3["rpcversion"] = 3.into();
+        assert!(!serde_json::from_value::<YedInfo>(v3).unwrap().mint_requires_armed, "an rpcversion-3 node still parses");
         let stats: YedStats = serde_json::from_value(v["yed_getstats"].clone()).unwrap();
         assert_eq!(stats.p_mint, 1990000);
         assert_eq!(stats.supply_cents, 250000);
