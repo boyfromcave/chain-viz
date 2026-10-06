@@ -1,0 +1,85 @@
+# chain-viz release (plan C7, "release build in CI"): a tag `v*` tests, builds the release binaries
+# (linux x86_64, macOS arm64) and attaches them with their SHA-256 to the GitHub release.
+#
+# Split from ci.yml (2026-10-06) so that no job of a publishing workflow restores a cache: the
+# binaries are built from a clean target and a fresh registry (zizmor cache-poisoning). The token
+# is read-only except in `publish`, the one job that writes (audit H-15).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.91.0
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: chain-viz-linux-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: chain-viz-macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      TARGET: ${{ matrix.target }}
+      ASSET: ${{ matrix.asset }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - run: cargo test --locked
+      - run: cargo build --release --locked --target "$TARGET"
+      - run: |
+          cp "target/$TARGET/release/chain-viz" "$ASSET"
+          tar czf "$ASSET.tar.gz" "$ASSET"
+          shasum -a 256 "$ASSET.tar.gz" > "$ASSET.tar.gz.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            ${{ matrix.asset }}.tar.gz
+            ${{ matrix.asset }}.tar.gz.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The only job that writes: it creates the release (or adds to it) and uploads the assets.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: assets
+          merge-multiple: true
+      - name: gh release (create, or upload into the existing one)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -l assets
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --clobber
+          else
+            gh release create "$TAG" assets/* --verify-tag --title "$TAG" --generate-notes
+          fi
