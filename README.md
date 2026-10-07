@@ -13,6 +13,15 @@ operator or a prospective attestor can see what participating pays. It never hol
 never broadcasts, never calls a `yed_*`, `set_*` or `vault_*` writer; a CI test enforces that. One static binary,
 an embedded UI, no build step for the page.
 
+**This branch (`upgrade/vault`) watches nodes on the vault network upgrade** (`UPGRADE_VAULT`,
+consensus branch ID `0x6d5b7a31`, ycash-dd and ycash6 `upgrade/vault`): a coordinated hard fork
+that adds the vault primitive with Yellowback as its one rule module, so YED's rules are
+consensus from the activation height. chain-viz itself needs no consensus code; it reads the
+upgrade's state (`yed_*` at rpcversion 5 and the read-only `set_*` / `vault_*` RPCs) and still
+watches a stock or `harden/yellowback` node. The upgrade has no activation height on mainnet or
+testnet and is not activated on any public network: the Yellowback and vault panels show data on
+a regtest devnet only.
+
 ![chain-viz on an 11-node devnet](docs/screenshot.png)
 
 Plan and findings: `docs/plans/chain-viz-plan.md` in the yellowback workspace (§9 has the
@@ -98,9 +107,12 @@ line), `--datadir <dir>` (its `.cookie`, also `regtest/.cookie` and `testnet3/.c
 
 The node needs:
 
-* `-yellowback -experimentalfeatures` for the Yellowback overlay (`yed_getinfo` and the rest).
-  A stock node without them is watched as chain + mempool only (`nodes[].yellowback = false`)
-  and still counts in the tip-agreement view.
+* for the Yellowback and vault panels, a node built from `upgrade/vault` with the upgrade and the
+  network's YED attestor set configured (no enabling flag; on regtest
+  `-nuparams=6d5b7a31:<h> -yellowbackattestorset=<setid>`). A `harden/yellowback` node needs
+  `-experimentalfeatures -yellowback` for its `yed_*` RPCs. A node without the `yed_*` RPCs is
+  watched as chain + mempool only (`nodes[].yellowback = false`) and still counts in the
+  tip-agreement view.
 * **no `-prune`**: blocks are fetched by hash with `getblock`, and a reorg walks back to the
   fork point.
 * **`-txindex` is not required.** Confirmed transactions are read through `getblock <hash> 2`,
