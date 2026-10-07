@@ -1,31 +1,39 @@
 # chain-viz
 
-chain-viz is a **read-only sidecar of `ycashd`** that shows, live, what a Ycash chain and its
-Ycash Yellowback (YED) overlay are doing across many nodes at once: per-node tips and their
-disagreement, the block DAG with side branches, reorgs and orphans as they happen, the mempool
-with first-seen per node and each Yellowback transaction's verdict before a pool includes it,
-the state of the Yellowback rule module (the vault upgrade it is part of, arming, halt mask,
-prices, supply, collateral, vaults, attestors, state-hash agreement), the **vault primitive**
-under it (signer sets, vaults and intents by application tag, unlocks, releases and cancels,
-set acts), and a **revenue ledger** that
-attributes every enforcement fee and attestor fee to the key that received it — so a pool
-operator or a prospective attestor can see what participating pays. It never holds a key,
-never broadcasts, never calls a `yed_*`, `set_*` or `vault_*` writer; a CI test enforces that. One static binary,
-an embedded UI, no build step for the page.
+chain-viz is a **read-only sidecar of `ycashd`** that shows, live, what a Ycash chain is doing
+across many nodes at once: per-node tips and their disagreement, the block DAG with side
+branches, reorgs and orphans as they happen, and the mempool with first-seen per node. On nodes
+that run Yellowback it also shows the Yellowback state, the vaults and signer sets under it, and
+a **revenue ledger** that attributes every pool fee and attestor fee to the key that received
+it, so a pool operator or a prospective attestor can see what participating pays. It never
+holds a key, never broadcasts and never calls an RPC that writes; a CI test enforces that. One
+static binary, an embedded UI, no build step for the page.
 
-**This branch (`upgrade/vault`) watches nodes on the vault network upgrade** (`UPGRADE_VAULT`,
-consensus branch ID `0x6d5b7a31`, ycash-dd and ycash6 `upgrade/vault`): a coordinated hard fork
-that adds the vault primitive with Yellowback as its one rule module, so YED's rules are
-consensus from the activation height. chain-viz itself needs no consensus code; it reads the
-upgrade's state (`yed_*` at rpcversion 5 and the read-only `set_*` / `vault_*` RPCs) and still
-watches a stock or `harden/yellowback` node. The upgrade has no activation height on mainnet or
-testnet and is not activated on any public network: the Yellowback and vault panels show data on
-a regtest devnet only.
+## Ycash Yellowback (YED) and the vault upgrade
+
+This branch (`upgrade/vault`) watches nodes that carry a proposed Ycash network upgrade, **the
+vault upgrade**, which adds **vaults** to Ycash: YEC locked on chain under rules every node
+enforces, released only with the approval of a bonded **signer set**, after a delay during which
+the release can be cancelled, and always recoverable by its owner if the signers go silent.
+**Ycash Yellowback (YED)** is a dollar token built on vaults (`1 YED = 1 US dollar`); its
+YEC/USD price comes from mining pools and from **attestors**, members of Yellowback's signer set
+who sign prices.
+
+- **What chain-viz shows:** YED prices, supply, collateral, vaults, claims and attestors, each
+  Yellowback transaction's verdict before a pool includes it, the fees pools and attestors
+  earn, and the vault upgrade itself: signer sets, vaults and pending releases of every
+  application, by tag.
+- **Node it needs:** any ycashd v4.5.0 or 6.20.0 for the chain and mempool views; for the
+  Yellowback and vault panels, a ycashd built from the `upgrade/vault` branch of
+  [ycash-dd](https://github.com/boyfromcave/ycash-dd) or
+  [ycash6](https://github.com/boyfromcave/ycash6).
+- **Status: proposed, not live.** It runs on a local test network (regtest) only. It has not been
+  adopted by the Ycash Foundation, has not been audited, and has no activation height on mainnet
+  or testnet. So the Yellowback and vault panels show data on a local test network only.
+- **Try it:** the node's devnet starts chain-viz for you; see
+  [Run against the devnet](#run-against-the-devnet).
 
 ![chain-viz on an 11-node devnet](docs/screenshot.png)
-
-Plan and findings: `docs/plans/chain-viz-plan.md` in the yellowback workspace (§9 has the
-status table and the C-F findings; `docs/mapping.md` §18 mirrors the node-side ones).
 
 ## Install and build
 
@@ -40,8 +48,7 @@ node qa/ui-smoke.mjs http://127.0.0.1:8480              # the UI panels under a 
 
 Tagged releases (`v*`) carry linux x86_64 and macOS arm64 binaries (see CI below). If several
 checkouts share `$CARGO_TARGET_DIR`, build a binary you are about to run under a private
-target dir — another build replacing the file while it runs leaves the process stuck
-(plan C-F18).
+target dir — another build replacing the file while it runs leaves the process stuck.
 
 ## Run against the devnet
 
@@ -82,7 +89,7 @@ With the heartbeat running the majority stays ahead, so it is node 4 that reorgs
 *others* reorg instead, `D heartbeat stop`, `generate 5` on node 4, then `D heartbeat start`: one
 `reorg` row per node appears as they move onto node 4's longer branch.
 
-Never invalidate more than 99 blocks deep (plan finding C-F33). Both node versions refuse a reorg
+Never invalidate more than 99 blocks deep. Both node versions refuse a reorg
 longer than `MAX_REORG_LENGTH` = 99 with a shutdown (v4.5.0 `src/main.cpp:3772`, 6.20.0
 `src/main.cpp:4673-4688`), and a wallet node's witness cache holds `WITNESS_CACHE_SIZE` =
 `MAX_REORG_LENGTH + 1` = 100 entries at both (v4.5.0 `src/wallet/wallet.h:282`, 6.20.0
@@ -109,8 +116,7 @@ The node needs:
 
 * for the Yellowback and vault panels, a node built from `upgrade/vault` with the upgrade and the
   network's YED attestor set configured (no enabling flag; on regtest
-  `-nuparams=6d5b7a31:<h> -yellowbackattestorset=<setid>`). A `harden/yellowback` node needs
-  `-experimentalfeatures -yellowback` for its `yed_*` RPCs. A node without the `yed_*` RPCs is
+  `-nuparams=6d5b7a31:<h> -yellowbackattestorset=<setid>`). A node without the `yed_*` RPCs is
   watched as chain + mempool only (`nodes[].yellowback = false`) and still counts in the
   tip-agreement view.
 * **no `-prune`**: blocks are fetched by hash with `getblock`, and a reorg walks back to the
@@ -152,7 +158,7 @@ kept), not by uptime.
 | `--pid-file <PATH>` | Write the pid there; removed on exit. |
 | `--rpc-concurrency <N>` | In-flight RPC calls allowed per node, default 2. |
 | `--log <LEVEL>` | `error`, `warn`, `info` (default), `debug`, `trace`, or a `tracing` filter. Logs go to stderr; stdout carries only `listening on http://…`. |
-| `--yolo <URL[,URL…]>`, `--lightwalletd <URL>` | Parsed and ignored with a warning: the pool and lightwalletd lanes of plan §3.4 are not implemented. |
+| `--yolo <URL[,URL…]>`, `--lightwalletd <URL>` | Parsed and ignored with a warning: the pool and lightwalletd lanes are not implemented. |
 
 SIGINT or SIGTERM stops it (the devnet's `down` sends SIGTERM); `--export` writes once more on
 the way out.
@@ -167,7 +173,7 @@ per call and at most 64 WebSocket connections are open at once, `--public` or no
   `{ok, nodes, nodesUp, tip{height,hash}, agreeing, disagreeing[], seq, version, chain,
   rpcCalls{<node>{<method>: count}}, replay{file,pos,total,speed}|null, public, wsOpen}`.
   `ok` is "at least one node up"; `tip`/`agreeing` describe the majority head. `agreeing` can
-  momentarily exceed `nodesUp` (plan C-F27): wait for both when scripting.
+  momentarily exceed `nodesUp`: wait for both when scripting.
 * **`GET /api/snapshot`** — the whole model, what the UI loads on open:
   `{version, schema, seq, ts, chainName, nodes[{id,role,sources,up,error,yellowback,lastSeen}],
   chain{heads, majority, main[≤200 BlockInfo, newest last], side[], tips, blockCount},
@@ -235,8 +241,7 @@ fees, median age, transactions older than 2 blocks (a pool filtering it, or a fe
 policy), *partial* = present on some nodes but not all (propagation, or a stock node refusing
 what it does not understand).
 
-**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed` (rpcversion 4,
-hardening H-1), a warning pill when a node reports an `rpcversion` other than 5, the vault
+**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 5, the vault
 upgrade from `yed_getinfo.upgrade` (status, branch ID, activation height, claim delay, the YED
 attestor set), arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
 `UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
@@ -253,12 +258,6 @@ on hover; `claim_release`, `claim_cancel` and `set_act` rows are the claim inten
 an attestor's set acts); vault tiles with `CLAIMING` (a claim intent pending) and, only when an
 older VOID vault is listed, the void count.
 
-The v3 enforcement state is not shown any more: under the vault upgrade (rpcversion 5) the
-Yellowback rules are consensus from the activation height, so `enforcing`, the work valve,
-the sunset, abandonment, pool signalling / lock-in, the rejected / suppressed counters and the
-"collateral released while not enforcing" ledger rows are gone from the node and from here
-(upgrade plan §6).
-
 **Vault primitive** — tiles from `vault_getinfo` (upgrade active and from which height, branch
 ID, sets, vaults, intents, locked YEC, state hash); the signer sets (`set_list`, and
 `set_getinfo` for the members of up to 16 sets) with seats, thresholds, open/admitted,
@@ -274,7 +273,7 @@ the block was walked before the outpoint was listed) is classified from the list
 marked *inferred*: an intent replaced by a vault with its `origin` script before maturity is a
 cancel, one gone at or after maturity a release. Two ratios on this panel are priced differently by the node on purpose:
 the global-ratio tile is at `pMint`, the scatter at `pClaim`, and they disagree for about one
-slow window after a price move (plan C-F9).
+slow window after a price move.
 
 **Revenue** — see the next section.
 
@@ -286,7 +285,7 @@ The ledger (`src/model/revenue.rs`) is a list of attributed outputs, one row per
 `(height, txid, vout, kind, zat, payee)`, built from the coinbase and from `yed_gettxinfo` of
 every Yellowback transaction in a block. It is **attributed, not estimated**:
 
-* **Enforcement fees go to a quoting key, not to the block winner.** `enforcefee` rows carry
+* **Pool fees go to a quoting key, not to the block winner.** `enforcefee` rows carry
   `yed_gettxinfo.payee` — one key in E(R), the set of keys with a quote tag in the last 100
   blocks, chosen by the transaction builder. A pool with 5 % of hashpower that quotes every
   block is in E(R) for every fee on the network; a pool with 40 % that does not quote earns
@@ -295,11 +294,12 @@ every Yellowback transaction in a block. It is **attributed, not estimated**:
 * **Stock coinbase.** `subsidy` and `netfee` are the miner's coinbase outputs (net fees =
   coinbase value − `getblocksubsidy.miner`); `subsidy_other` is what the coinbase pays to
   someone else (regtest's founders output), matched by `getblocksubsidy.foundersaddress` on
-  v4.5.0 and, since ycashd 6.20.0 no longer reports it, by the output equal to `founders`
+  v4.5.0 and, on ycashd 6.20.0, which does not report it, by the output equal to `founders`
   (a tie goes to the fund address last attributed). A pool's coinbase address is aliased to the
   `payoutKey` of the tag on the same block, so its blocks roll up under its quoting key;
   a block without a tag stays under its coinbase address.
-* **Attestor fees** (`attestfee`, 25 % of the enforcement fee once ARMED) go to the bond key
+* **Attestor fees** (`attestfee`, once ARMED a share of the pool fee: 25 % on regtest, 50 % in
+  the launch parameters) go to the bond key
   in `attestPayee`. The per-attestor yield is fees ÷ bond over the range, **realised, not
   promised**.
 * **USD figures are at `pMint`** — the protocol's own mint price at that row's height
@@ -307,9 +307,8 @@ every Yellowback transaction in a block. It is **attributed, not estimated**:
   external feed; every total says `at pMint` and `usdComplete: false` when a height's price was
   unknown.
 * **The counterfactual** ("a quoting pool of any size would have expected ≈ X YEC in this
-  range") is Σ `fee / (|E(R)| + 1)` over the enforcement-fee outputs, with E(R) from
-  `yed_getfeepayee` at each fee's `refHeight`, assuming uniform selection. Accuracy weighting
-  (FEE-W) makes the realised figure for an honest quoter higher, so the number is a floor.
+  range") is Σ `fee / (|E(R)| + 1)` over the pool-fee outputs, with E(R) from
+  `yed_getfeepayee` at each fee's `refHeight`, assuming uniform selection. Accuracy weighting makes the realised figure for an honest quoter higher, so the number is a floor.
   `resolved`/`unresolved`/`noEligible` say how many fee outputs it covers; a `refHeight` the
   node refuses or a window nobody quoted in is counted, not guessed.
 * A test (`tests/revenue_reconcile.rs`) asserts that Σ `enforcefee` over a block range equals
@@ -345,8 +344,8 @@ one when `CHAINVIZ_BIN` is set.
 
 ## Hosting
 
-chain-viz binds **127.0.0.1:8480** unless told otherwise. A hosted public instance is wanted
-(plan C-10); where is still the owner's call. Two ways to let others in:
+chain-viz binds **127.0.0.1:8480** unless told otherwise. There is no hosted public instance
+yet. Two ways to let others in:
 
 **A reverse proxy** in front of the loopback instance, terminating TLS and forwarding `/ws`
 as a WebSocket. nginx:
@@ -416,19 +415,20 @@ chain-viz calls only the stock read RPCs (`getbestblockhash`, `getblock`, `getbl
 `yed_getstatehash`) and the vault primitive's read RPCs (`vault_getinfo`, `set_list`,
 `set_getinfo`, `vault_list`; `vault_decodescript` is wrapped but the panel decodes acts and
 selectors itself from `getblock … 2`). It never calls `yed_setquote`, `yed_addattestation`, any wallet-table
-`yed_*`, `generate`, `submitblock`, `sendrawtransaction`, `getblocktemplate` or any wallet RPC
-(plan §4.2). `tests/readonly_gate.rs` greps `src/` for every one of those names — code,
+`yed_*`, `generate`, `submitblock`, `sendrawtransaction`, `getblocktemplate` or any wallet RPC.
+`tests/readonly_gate.rs` greps `src/` for every one of those names — code,
 strings and comments — and fails the build on a match. A user who wants to act is sent to
 YecWallet or the CLI.
 
 ## rpcversion
 
 chain-viz models `yed_*` at **rpcversion 5** (the vault upgrade; `KNOWN_RPC_VERSION` in
-`src/rpc.rs`): `yed_getinfo` with `upgrade` and without the enforcement fields,
+`src/rpc.rs`): `yed_getinfo` with `upgrade`,
 `yed_getactivation` as the upgrade object, `yed_getblockverdict` with `verdict`. Unlike the
 wallets, which refuse a node whose `rpcversion` is not exactly theirs (they would build
 transactions from shapes they do not know), chain-viz is an observer and never refuses a node:
-an older node still parses (its retired fields land in `extra`, it has no `upgrade`), and the
+an older node still parses (fields chain-viz does not model land in `extra`; it has no
+`upgrade`), and the
 health ribbon shows a warning pill naming the versions when any node is not at 5.
 
 ## The RPC budget
@@ -460,6 +460,6 @@ repository and runs `qa/rpc-tests/yellowback_chainviz.py` against it on a 3-node
 
 ## Findings
 
-Every trap met while building chain-viz — node quirks, devnet facts, design corrections — is a
-`C-F` row in the plan's §9 (`docs/plans/chain-viz-plan.md`), and the ones that are facts about
-the node or the devnet are mirrored in `docs/mapping.md` §18.
+Every trap met while building chain-viz (node quirks, devnet facts, design corrections) is
+recorded in the plan (`docs/plans/chain-viz-plan.md`) in the project workspace,
+`yellowback-workspace`.
