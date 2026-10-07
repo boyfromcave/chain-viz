@@ -579,7 +579,7 @@ impl RevenueModel {
         let counterfactual = json!({
             "zat": cf_zat.round() as i64, "usd": cf_usd, "feeOutputs": fees.len(), "resolved": resolved, "unresolved": unresolved, "noEligible": empty,
             "label": format!("a quoting pool of any size would have expected ≈ {:.4} YEC in this range", cf_zat / 1e8),
-            "method": "Σ fee / (|E(R)| + 1) over the enforcement-fee outputs, E(R) from yed_getfeepayee at each fee's refHeight; uniform selection. Accuracy weighting (FEE-W) makes the realised figure for an honest quoter higher.",
+            "method": "Σ fee / (|E(R)| + 1) over the pool-fee outputs, E(R) from yed_getfeepayee at each fee's refHeight; uniform selection. Accuracy weighting (FEE-W) makes the realised figure for an honest quoter higher.",
         });
         let groups = match by {
             "attestor" => self.by_attestor(&all, &money_of, attestors),
