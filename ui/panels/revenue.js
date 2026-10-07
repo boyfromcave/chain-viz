@@ -13,7 +13,7 @@ const yec = (zat) => (zat === null || zat === undefined ? '–' : (zat / 1e8).to
 const usd = (v) => (v === null || v === undefined ? '–' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const money = (m) => (m ? `${yec(m.zat)} YEC · ${usd(m.usd)}${m.usdComplete === false ? ' (partial)' : ''}` : '–');
 const addr = (a) => (a ? (a.length > 14 ? a.slice(0, 8) + '…' + a.slice(-4) : a) : '–');
-// Categorical slots, fixed order (dataviz): stock coinbase s1, enforcement fee (FEE-1) s2, attestor fee s3.
+// Categorical slots, fixed order (dataviz): stock coinbase s1, pool fee (FEE-1) s2, attestor fee s3.
 const SLOT = { stock: 'var(--s1)', enforcefee: 'var(--s2)', attestfee: 'var(--s3)' };
 const RANGES = [['50', 'last 50 blocks'], ['200', 'last 200'], ['all', 'whole window']];
 
@@ -81,7 +81,7 @@ function renderTiles(b, s) {
   const t = b.totals, el = clear($('rv-tiles'));
   const stock = { zat: t.subsidy.zat + t.netfee.zat, usd: (t.subsidy.usd ?? 0) + (t.netfee.usd ?? 0) };
   el.append(
-    tile('enforcement fees', `${yec(t.enforcefee.zat)} YEC`, `${usd(t.enforcefee.usd)} ${b.priceLabel}`),
+    tile('pool fees', `${yec(t.enforcefee.zat)} YEC`, `${usd(t.enforcefee.usd)} ${b.priceLabel}`),
     tile('attestor fees', `${yec(t.attestfee.zat)} YEC`, `${usd(t.attestfee.usd)} ${b.priceLabel}`),
     tile('stock coinbase', `${yec(stock.zat)} YEC`, `subsidy + network fees · ${usd(stock.usd)} ${b.priceLabel}`),
     tile('Yellowback share', t.blocks ? `${(100 * (t.enforcefee.zat + t.attestfee.zat) / Math.max(1, stock.zat + t.enforcefee.zat + t.attestfee.zat)).toFixed(2)} %` : '–', 'of all miner-side revenue in range'),
@@ -107,23 +107,23 @@ function renderBlocks(b) {
     const bar = (x, v, colour) => { if (v <= 0) return null; const y = yy(v / 1e8); return svg('rect', { x, y, width: bw, height: Math.max(1, H - M.b - y), fill: colour, rx: 2 }); };
     const g = svg('g', { class: 'rv-bar' });
     const st = bar(x0, stockOf(r), SLOT.stock); if (st) g.append(st);
-    // Yellowback fees stacked: enforcement fee, then the attestor fee with a 2px surface gap
+    // Yellowback fees stacked: pool fee, then the attestor fee with a 2px surface gap
     if (r.enforcefee.zat > 0) g.append(svg('rect', { x: x0 + bw + 2, y: yy(r.enforcefee.zat / 1e8), width: bw, height: Math.max(1, H - M.b - yy(r.enforcefee.zat / 1e8)), fill: SLOT.enforcefee, rx: 2 }));
     if (r.attestfee.zat > 0) { const y1 = yy((r.enforcefee.zat + r.attestfee.zat) / 1e8), y0 = yy(r.enforcefee.zat / 1e8) - 2; g.append(svg('rect', { x: x0 + bw + 2, y: y1, width: bw, height: Math.max(1, y0 - y1), fill: SLOT.attestfee, rx: 2 })); }
     const hit = svg('rect', { x: x0 - 1, y: M.t, width: slot, height: H - M.t - M.b, fill: 'transparent' });
-    tooltip(hit, () => `block ${r.height}  miner ${addr(r.miner)}${r.tag ? '  tag ' + addr(r.tag) : '  (no tag)'}\nsubsidy ${yec(r.subsidy.zat)}  net fees ${yec(r.netfee.zat)}  fund ${yec(r.subsidyOther.zat)} YEC\nenforcement fee ${yec(r.enforcefee.zat)} YEC (${usd(r.enforcefee.usd)})  attestor fee ${yec(r.attestfee.zat)} YEC (${usd(r.attestfee.usd)})\n${(r.ybTxs || []).map((t) => `${t.type}${t.path ? '/' + t.path : ''} ${t.txid.slice(0, 10)}… → ${addr(t.payee)}${t.attestPayee ? ' + ' + addr(t.attestPayee) : ''}`).join('\n') || 'no Yellowback tx'}\npMint ${r.priceUsed ? '$' + (r.priceUsed / 1e6).toFixed(4) : '–'}`);
+    tooltip(hit, () => `block ${r.height}  miner ${addr(r.miner)}${r.tag ? '  tag ' + addr(r.tag) : '  (no tag)'}\nsubsidy ${yec(r.subsidy.zat)}  net fees ${yec(r.netfee.zat)}  fund ${yec(r.subsidyOther.zat)} YEC\npool fee ${yec(r.enforcefee.zat)} YEC (${usd(r.enforcefee.usd)})  attestor fee ${yec(r.attestfee.zat)} YEC (${usd(r.attestfee.usd)})\n${(r.ybTxs || []).map((t) => `${t.type}${t.path ? '/' + t.path : ''} ${t.txid.slice(0, 10)}… → ${addr(t.payee)}${t.attestPayee ? ' + ' + addr(t.attestPayee) : ''}`).join('\n') || 'no Yellowback tx'}\npMint ${r.priceUsed ? '$' + (r.priceUsed / 1e6).toFixed(4) : '–'}`);
     g.append(hit); el.append(g);
     if (i % step === 0) el.append(svg('text', { class: 'tick', x: x0 + bw, y: H - 6, 'text-anchor': 'middle' }, String(r.height)));
   });
   el.append(svg('line', { class: 'axis', x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b }));
   const lg = clear($('rv-blocks-legend'));
-  for (const [n, c] of [['stock coinbase', SLOT.stock], ['enforcement fee', SLOT.enforcefee], ['attestor fee', SLOT.attestfee]]) lg.append(h('span', {}, h('i', { style: `background:${c}` }), n));
+  for (const [n, c] of [['stock coinbase', SLOT.stock], ['pool fee', SLOT.enforcefee], ['attestor fee', SLOT.attestfee]]) lg.append(h('span', {}, h('i', { style: `background:${c}` }), n));
 }
 
 // ---------------------------------------------------------------- per pool
 function renderPools(p) {
   const t = clear($('rv-pools')); if (!p) return;
-  t.append(h('tr', {}, ...['payoutKey', 'blocks mined', 'tags', 'selected', 'enforcement fees', 'USD at pMint', 'per tag', 'per block mined', 'stock coinbase', 'quoting', 'accuracy'].map((c) => h('th', {}, c))));
+  t.append(h('tr', {}, ...['payoutKey', 'blocks mined', 'tags', 'selected', 'pool fees', 'USD at pMint', 'per tag', 'per block mined', 'stock coinbase', 'quoting', 'accuracy'].map((c) => h('th', {}, c))));
   const max = Math.max(1, ...(p.groups || []).map((g) => g.enforcefee.zat));
   for (const g of p.groups || []) {
     const m = g.miner || {};

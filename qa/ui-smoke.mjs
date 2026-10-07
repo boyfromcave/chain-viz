@@ -100,7 +100,7 @@ if (!isStatic) {
   const rv = await (await fetch(base + '/api/revenue?by=payoutKey')).json();
   const el = (id) => document.getElementById(id);   // the panel registers its own ids (it builds its section itself)
   const pools = el('rv-pools').children.length;
-  pools === rv.groups.length + 1 ? ok(`revenue: ${rv.groups.length} pool rows (+ header) for ${rv.groups.length} payoutKeys; enforcement fees ${rv.totals.enforcefee.zat} zat = ${rv.totals.enforcefee.usd?.toFixed(2)} USD ${rv.priceLabel}`) : fail(`revenue pool rows ${pools} != groups ${rv.groups.length} + 1`);
+  pools === rv.groups.length + 1 ? ok(`revenue: ${rv.groups.length} pool rows (+ header) for ${rv.groups.length} payoutKeys; pool fees ${rv.totals.enforcefee.zat} zat = ${rv.totals.enforcefee.usd?.toFixed(2)} USD ${rv.priceLabel}`) : fail(`revenue pool rows ${pools} != groups ${rv.groups.length} + 1`);
   const bars = el('rv-blocks').querySelectorAll('.rv-bar').length;
   const blk = await (await fetch(base + '/api/revenue?by=block')).json();
   const want = Math.min(50, blk.groups.length);
