@@ -286,7 +286,9 @@ impl RpcClient {
         self.typed("yed_getblockverdict", json!([hash])).await
     }
     // ---- C3: the Yellowback health model's reads (plan §4.1); shapes stay `Value` where the
-    // UI only relays them. Field names: doc/yellowback-rpc-contract.json rpcversion 5.
+    // UI only relays them. Field names: doc/yellowback-rpc-contract.json rpcversion 6 (in-term).
+    // `yed_listclaimable` rows: `claimable` (rpcversion 6) false = listed, not claimable
+    // (`model::yellowback::is_claimable_row`).
     pub async fn yed_getprice(&self, height: Option<u64>) -> Result<Value, RpcError> {
         self.call("yed_getprice", height.map(|h| json!([h])).unwrap_or(json!([]))).await
     }
@@ -499,12 +501,17 @@ pub struct TxOut {
     pub script_pub_key: Value,
 }
 
-// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 5) ----
+// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 6 on upgrade/vault-in-term) ----
 
 /// The `rpcversion` whose shapes the typed structs below follow. chain-viz is an observer and
 /// keeps parsing an older node (its typed fields default and it has no `upgrade`); the UI says
 /// which nodes report another version rather than refusing them (README, "rpcversion").
-pub const KNOWN_RPC_VERSION: u32 = 5;
+/// 6 is the in-term claims line (`upgrade/vault-in-term`, the workspace's
+/// `docs/plans/yellowback-in-term-claims-plan.md` §4.1): `yed_listclaimable` lists every ACTIVE
+/// vault whose claim branch is open, in term too, with `claimable` true or false, and
+/// `yed_getinfo.params` carries `inTermClaims`, `claimThresholdBps` and `earlyRedeemFeeBps`.
+/// A 5 node still parses (its rows lack `claimable` and are all claimable).
+pub const KNOWN_RPC_VERSION: u32 = 6;
 
 /// `yed_getinfo` at rpcversion 5 (the vault upgrade, upgrade plan §6, §15.10): `enforcing`,
 /// `valveTripped`, `sunset`, `abandoned`, `rejectedBlocks`, `suppressedBlocks`, `activation`
@@ -758,6 +765,14 @@ mod tests {
         let info: YedInfo = serde_json::from_value(v["yed_getinfo"].clone()).unwrap();
         assert_eq!((info.height, info.rpcversion, info.start_height), (331, KNOWN_RPC_VERSION, 103));
         let up = info.upgrade.as_ref().expect("rpcversion 5 carries the upgrade object");
+        // rpcversion 6 (in-term claims): the new params ride in the untyped `params`
+        assert_eq!(info.params["inTermClaims"], json!(true));
+        assert_eq!(info.params["claimThresholdBps"], json!(12500));
+        assert_eq!(info.params["earlyRedeemFeeBps"], json!([500, 250, 100]));
+        let rows: Vec<Value> = serde_json::from_value(v["yed_listclaimable"].clone()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(crate::model::yellowback::is_claimable_row(&rows[0]));
+        assert_eq!(rows[0]["underwaterAt"], json!(436700));
         assert_eq!((up.name.as_str(), up.branch_id.as_str(), up.status.as_str(), up.activation_height, up.claim_delay), ("Vault", "6d5b7a31", "active", 103, 10));
         assert_eq!(up.attestor_set_id, info.params["attestorSetId"].as_str().unwrap());
         for gone in ["enforcing", "valveTripped", "sunset", "abandoned", "rejectedBlocks", "suppressedBlocks", "activation", "templatePolicy"] {

@@ -183,6 +183,10 @@ pub struct YellowbackSnapshot {
     pub attestors: Vec<Value>,
     pub vaults: Vec<Value>,
     pub claimable: Vec<Value>,
+    /// How many `claimable` rows are claimable now ([`is_claimable_row`]); at rpcversion 6 the
+    /// others are listed in term above the threshold, `underwaterAt` the price they become so.
+    #[serde(rename = "claimableNow")]
+    pub claimable_now: usize,
     /// `yed_gethistory` rows by height, oldest first, the last `SNAPSHOT_HISTORY`.
     pub history: Vec<Value>,
     #[serde(rename = "historyFrom")]
@@ -547,6 +551,7 @@ impl YellowbackModel {
             attestors: self.attestors.clone(),
             vaults: self.vaults.clone(),
             claimable: self.claimable.clone(),
+            claimable_now: self.claimable.iter().filter(|r| is_claimable_row(r)).count(),
             history_from: history.first().and_then(|r| r.get("height").and_then(Value::as_u64)),
             history,
             txs: self.order.iter().take(SNAPSHOT_TXS).filter_map(|t| self.txs.get(t).cloned()).collect(),
@@ -591,6 +596,33 @@ pub fn history_row_from_stats(s: &YedStats) -> Value {
         o.insert("sigmaMultBps".into(), m.clone());
     }
     Value::Object(o)
+}
+
+/// Whether a `yed_listclaimable` row is claimable now. rpcversion 6 (in-term claims, IT-7) lists
+/// every ACTIVE vault whose claim branch is open, in term too, and marks the ones above the
+/// claim threshold `claimable: false` (listed, not claimable); a row without the field is an
+/// rpcversion-5 row, where only claimable vaults were listed.
+pub fn is_claimable_row(row: &Value) -> bool {
+    row.get("claimable").and_then(Value::as_bool).unwrap_or(true)
+}
+
+/// The in-term parameters of `yed_getinfo.params` (rpcversion 6): whether a claim is valid in
+/// term, the claim threshold θ, and the early-redeem fee per class (A, B, C) in bps of the
+/// collateral. An rpcversion-5 node reports none: `in_term_claims` false, θ 11,000 (the
+/// upgrade line's), no fee.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InTermParams {
+    pub in_term_claims: bool,
+    pub claim_threshold_bps: i64,
+    pub early_redeem_fee_bps: Vec<i64>,
+}
+
+pub fn in_term_params(params: &Value) -> InTermParams {
+    InTermParams {
+        in_term_claims: params.get("inTermClaims").and_then(Value::as_bool).unwrap_or(false),
+        claim_threshold_bps: params.get("claimThresholdBps").and_then(Value::as_i64).unwrap_or(11_000),
+        early_redeem_fee_bps: params.get("earlyRedeemFeeBps").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default(),
+    }
 }
 
 /// A vault's collateral ratio in bps at `p_claim` (`UnderwaterAt`, `rpc/yellowback.cpp:218`:
@@ -680,6 +712,26 @@ mod tests {
         assert_eq!(bps, 5025);
         assert_eq!(vault_ratio_bps(25_125_628_141, 100_000, 437_800).unwrap(), 1100, "UnderwaterAt rounds up: at that price the vault is exactly at the threshold");
         assert_eq!(vault_ratio_bps(0, 1, 1), None);
+        // rpcversion 6 contract sample row: 2,518.89169 YEC against 100,000 cents at pClaim $0.40 is
+        // 100.75 %, under θ 125 %, so the row is claimable. (Its underwaterAt, 436 700, is the
+        // θ-110 % figure of the upgrade line's sample; at θ 125 % the vault turns at 496 250.)
+        assert_eq!(vault_ratio_bps(251_889_169_000, 100_000, 400_000).unwrap(), 10075);
+        assert_eq!(vault_ratio_bps(251_889_169_000, 100_000, 496_250).unwrap(), 12500);
+    }
+
+    #[test]
+    fn in_term_rows_and_params() {
+        // rpcversion 6: a listed row above θ is not claimable; a row without the field (rpcversion 5) is.
+        assert!(is_claimable_row(&json!({"vault": "a:0", "claimable": true})));
+        assert!(!is_claimable_row(&json!({"vault": "b:0", "claimable": false})));
+        assert!(is_claimable_row(&json!({"vault": "c:0"})));
+        let m = YellowbackModel { claimable: vec![json!({"vault": "a:0", "claimable": true}), json!({"vault": "b:0", "claimable": false, "underwaterAt": 520_000})], ..Default::default() };
+        let snap = m.snapshot(None, &BTreeSet::new());
+        assert_eq!((snap.claimable.len(), snap.claimable_now), (2, 1));
+        let p = in_term_params(&json!({"inTermClaims": true, "claimThresholdBps": 12500, "earlyRedeemFeeBps": [500, 250, 100]}));
+        assert_eq!(p, InTermParams { in_term_claims: true, claim_threshold_bps: 12_500, early_redeem_fee_bps: vec![500, 250, 100] });
+        let old = in_term_params(&json!({"claimDelay": 10}));
+        assert_eq!(old, InTermParams { in_term_claims: false, claim_threshold_bps: 11_000, early_redeem_fee_bps: vec![] });
     }
 
     #[test]

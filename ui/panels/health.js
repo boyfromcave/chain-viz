@@ -14,6 +14,17 @@ const usd = (micro) => (micro === null || micro === undefined ? '–' : `$${(mic
 const yec = (zat) => (zat === null || zat === undefined ? '–' : (zat / 1e8).toLocaleString(undefined, { maximumFractionDigits: 2 }));
 const yed = (cents) => (cents === null || cents === undefined ? '–' : (cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }));
 const pct = (bps) => (bps === null || bps === undefined ? '–' : `${(bps / 100).toFixed(1)} %`);
+// The claim threshold θ and the emergency ratio a node reports (yed_getinfo.params). rpcversion 6 (the
+// in-term claims line, upgrade/vault-in-term): θ 125 %, inTermClaims true, earlyRedeemFeeBps per class
+// A/B/C; an rpcversion-5 node has no inTermClaims and the upgrade line's 110 %.
+const KNOWN_RPCVERSION = 6;
+function thresholds(info) {
+  const p = info?.params || {};
+  return { theta: p.claimThresholdBps ?? 11000, emerg: p.attest?.emergencyRatioBps ?? 10500, inTerm: p.inTermClaims === true, fees: p.earlyRedeemFeeBps || [], claimDelay: p.claimDelay };
+}
+// A yed_listclaimable row is claimable now unless it says otherwise (rpcversion 6 lists in-term rows
+// above θ with claimable false; a rpcversion-5 row has no field and is claimable).
+const isClaimableRow = (c) => c.claimable !== false;
 // Payload / TxLog type names as the node spells them (PayloadTypeName, src/yellowback/payload.cpp).
 // rpcversion 5 adds claim_release / claim_cancel (the claim intent's two ends) and set_act (an attestor's heartbeat, removal or set equivocation).
 const TYPE_SLOT = { mint: 's1', transfer: 's3', redeem: 's2', register: 's4', notice: 's6', equivocation: 's8', revive: 's5', claim_release: 's7', claim_cancel: 's5', set_act: 's4' };
@@ -41,8 +52,8 @@ export function init() {
     h('div', { class: 'yb-grid' },
       h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Timeline'), h('span', { class: 'hint' }, 'x = height · the vault upgrade, arming, and one lane per halt-mask bit (filled = set)'), svg('svg', { id: 'yb-lanes', class: 'plot', role: 'img', 'aria-label': 'state lanes' })),
       h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Prices'), h('span', { class: 'hint' }, 'pFast / pMid / pSlow lines · pMint–pClaim band · fed price dotted (devnet mock-price)'), svg('svg', { id: 'yb-prices', class: 'plot', role: 'img', 'aria-label': 'price windows' }), h('div', { id: 'yb-price-legend', class: 'legend' }), h('div', { id: 'yb-fill', class: 'yb-fill' })),
-      h('div', { class: 'yb-card' }, h('h3', {}, 'Supply and collateral'), h('div', { id: 'yb-supply-tiles', class: 'tiles' }), svg('svg', { id: 'yb-ratio', class: 'plot', role: 'img', 'aria-label': 'global ratio' }), h('div', { class: 'hint' }, 'global ratio (collateral ÷ supply at pClaim) vs the 110 % claim and 105 % emergency lines · bars: net supply change per block')),
-      h('div', { class: 'yb-card' }, h('h3', {}, 'Vaults'), h('div', { id: 'yb-vault-tiles', class: 'tiles' }), svg('svg', { id: 'yb-vaults', class: 'plot', role: 'img', 'aria-label': 'vault scatter' }), h('div', { id: 'yb-vault-legend', class: 'legend' })),
+      h('div', { class: 'yb-card' }, h('h3', {}, 'Supply and collateral'), h('div', { id: 'yb-supply-tiles', class: 'tiles' }), svg('svg', { id: 'yb-ratio', class: 'plot', role: 'img', 'aria-label': 'global ratio' }), h('div', { id: 'yb-ratio-hint', class: 'hint' }, 'global ratio (collateral ÷ supply at pClaim) vs the claim and emergency lines · bars: net supply change per block')),
+      h('div', { class: 'yb-card' }, h('h3', {}, 'Vaults'), h('div', { id: 'yb-vault-tiles', class: 'tiles' }), svg('svg', { id: 'yb-vaults', class: 'plot', role: 'img', 'aria-label': 'vault scatter' }), h('div', { id: 'yb-vault-legend', class: 'legend' }), h('table', { id: 'yb-vault-table', class: 'table' })),
       h('div', { class: 'yb-card' }, h('h3', {}, 'Attestors'), h('table', { id: 'yb-attestors', class: 'table' })),
       h('div', { class: 'yb-card' }, h('h3', {}, 'Consistency'), h('div', { id: 'yb-consistency' })),
       h('div', { class: 'yb-card yb-wide' }, h('h3', {}, 'Yellowback transactions'), h('span', { class: 'hint' }, 'newest first · mempool rows carry the dry-run verdict (yed_validaterawtransaction)'), h('table', { id: 'yb-txs', class: 'table' }))),
@@ -78,7 +89,7 @@ export function render({ store, now }) {
   renderRibbon(y, info, stats, d);
   renderLanes(y, info, d);
   renderPrices(y, stats, d);
-  renderSupply(y, stats);
+  renderSupply(y, stats, info);
   renderVaults(y, stats, d);
   renderAttestors(y);
   renderConsistency(y, d);
@@ -97,9 +108,10 @@ function renderRibbon(y, info, stats, d) {
     pill(info.healthy ? 'healthy' : `unhealthy ${info.unhealthyReason || ''}`, info.healthy, info.healthy ? 'good' : 'critical'),
     // rpcversion 4 (hardening H-1): with mintRequiresArmed a mint at an unarmed R is invalid (mint-halted-unarmed)
     pill(info.mintRequiresArmed ? 'mint requires ARMED' : 'mint without ARMED', !!info.mintRequiresArmed, 'good'),
-    versions.length === 1 && versions[0] === 5 ? null : pill(`rpcversion ${versions.join('/')} (chain-viz models 5)`, true, 'warning'),
+    versions.length === 1 && versions[0] === KNOWN_RPCVERSION ? null : pill(`rpcversion ${versions.join('/')} (chain-viz models ${KNOWN_RPCVERSION})`, true, 'warning'),
     h('span', { class: 'yb-sep' }),
     h('span', { class: 'yb-state' }, h('b', {}, 'upgrade'), up ? ` ${up.name} ${(up.status || '?').toUpperCase()} ` : ' – ', h('span', { class: 'muted' }, up ? `branch ${up.branchId} · from ${up.activationHeight} · claim delay ${up.claimDelay} · attestor set ${(up.attestorSetId || '–').slice(0, 10)}…` : 'no upgrade object (a node before rpcversion 5)')),
+    claimsState(info),
     h('span', { class: 'yb-state' }, h('b', {}, 'arming'), ` ${att.status || '?'} `, h('span', { class: 'muted' }, `${att.seatedCount ?? '–'} seated · pool ${att.poolSize ?? '–'} (fresh ${att.poolFresh ?? '–'}) · trigger ${att.triggerHeight ?? '–'} · arm ${att.armHeight ?? '–'}`)),
     h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, mintingWhy(info, stats))),
     noPriceState(y.noPrice),
@@ -108,6 +120,15 @@ function renderRibbon(y, info, stats, d) {
   const alarm = $('yb-alarm');
   if (y.statehash_agree === false) { alarm.hidden = false; clear(alarm).append(h('b', {}, 'STATE HASH MISMATCH'), ` healthy nodes on the same tip disagree on yed_getstatehash: `, ...Object.entries(y.statehash).map(([n, v]) => h('code', {}, `${n}:${v.statehash.slice(0, 10)} `))); }
   else alarm.hidden = true;
+}
+
+// The claim rule's parameters (rpcversion 6, in-term IT-7 / IT-9): whether a claim is valid in term, θ, the
+// early-redeem fee per class and the claim delay.
+function claimsState(info) {
+  const t = thresholds(info);
+  const fees = t.fees.length ? t.fees.map((b, i) => `${'ABC'[i] || i} ${b / 100} %`).join(' / ') : '–';
+  return h('span', { class: 'yb-state', title: 'yed_getinfo.params: inTermClaims, claimThresholdBps, earlyRedeemFeeBps, claimDelay' }, h('b', {}, 'claims'), t.inTerm ? ' IN TERM ' : ' after term ',
+    h('span', { class: 'muted' }, `θ ${pct(t.theta)} · early-redeem fee ${fees} · claim delay ${t.claimDelay ?? '–'}`));
 }
 
 // Why minting is halted, or which classes are open. An unarmed halt (H-1) sets no halt-mask bit:
@@ -240,23 +261,25 @@ function ticks(lo, hi, n) { const raw = (hi - lo) / n, p = Math.pow(10, Math.flo
 
 // ---------------------------------------------------------------- supply / collateral / ratio
 function tile(label, value, sub, flag) { return h('div', { class: 'tile', 'data-flag': flag ? '1' : '0' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), sub ? h('div', { class: 'sub' }, sub) : null); }
-function renderSupply(y, stats) {
+function renderSupply(y, stats, info) {
+  const t = thresholds(info);
+  const hint = $('yb-ratio-hint'); if (hint) { clear(hint); hint.append(`global ratio (collateral ÷ supply at pClaim) vs the ${pct(t.theta)} claim and ${pct(t.emerg)} emergency lines · bars: net supply change per block`); }
   const tiles = clear($('yb-supply-tiles')); if (!stats) return;
   const rows = y.history || []; const prev = rows.length > 1 ? rows[rows.length - 2] : null;
   const dS = prev ? stats.supplyCents - prev.supplyCents : null, dC = prev ? stats.collateralZat - prev.collateralZat : null;
   tiles.append(tile('supply YED', yed(stats.supplyCents), dS !== null ? `${dS >= 0 ? '+' : ''}${yed(dS)} this block` : ''),
     tile('collateral YEC', yec(stats.collateralZat), dC !== null ? `${dC >= 0 ? '+' : ''}${yec(dC)} this block` : ''),
-    tile('global ratio', pct(stats.globalRatioBps), 'at pClaim', stats.globalRatioBps !== null && stats.globalRatioBps < 11000),
+    tile('global ratio', pct(stats.globalRatioBps), 'at pClaim', stats.globalRatioBps !== null && stats.globalRatioBps < t.theta),
     tile('unbacked YED', yed(stats.unbackedCents), '', stats.unbackedCents > 0));
   const el = clear($('yb-ratio')); const pts = rows.filter((r) => r.globalRatioBps !== null && r.globalRatioBps !== undefined);
   if (pts.length < 2) { el.append(svg('text', { class: 'empty', x: 20, y: 20 }, 'no supply yet')); return; }
   const W = el.clientWidth || 400, H = 160; el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const x = xScale(rows, W);
-  const hi = Math.max(12000, ...pts.map((r) => r.globalRatioBps)) * 1.05, lo = 0;
+  const hi = Math.max(t.theta + 1000, ...pts.map((r) => r.globalRatioBps)) * 1.05, lo = 0;
   const yy = (v) => H - PM.b - ((v - lo) / (hi - lo)) * (H - PM.t - PM.b);
   for (const v of ticks(lo, hi, 4)) { el.append(svg('line', { class: 'gridline', x1: PM.l, x2: W - PM.r, y1: yy(v), y2: yy(v) })); el.append(svg('text', { class: 'tick', x: PM.l - 4, y: yy(v) + 3, 'text-anchor': 'end' }, pct(v))); }
   // the two reference lines sit 5 % apart: label one above, one below, so they never collide
-  for (const [v, c, l, dy] of [[11000, 'var(--serious)', '110 % claim', -3], [10500, 'var(--critical)', '105 % emergency', 11]]) { el.append(svg('line', { x1: PM.l, x2: W - PM.r, y1: yy(v), y2: yy(v), stroke: c, 'stroke-width': 1, 'stroke-dasharray': '4 3' })); el.append(svg('text', { class: 'yb-label', x: PM.l + 2, y: yy(v) + dy, fill: c }, l)); }
+  for (const [v, c, l, dy] of [[t.theta, 'var(--serious)', `${pct(t.theta)} claim`, -3], [t.emerg, 'var(--critical)', `${pct(t.emerg)} emergency`, 11]]) { el.append(svg('line', { x1: PM.l, x2: W - PM.r, y1: yy(v), y2: yy(v), stroke: c, 'stroke-width': 1, 'stroke-dasharray': '4 3' })); el.append(svg('text', { class: 'yb-label', x: PM.l + 2, y: yy(v) + dy, fill: c }, l)); }
   // net supply change bars (baseline mid-height, tiny)
   const deltas = rows.map((r, i) => (i ? r.supplyCents - rows[i - 1].supplyCents : 0)); const maxD = Math.max(1, ...deltas.map(Math.abs));
   const dx = Math.max(1, (W - PM.l - PM.r) / rows.length);
@@ -269,35 +292,55 @@ function renderSupply(y, stats) {
 // ---------------------------------------------------------------- vault scatter
 function renderVaults(y, stats, d) {
   const tiles = clear($('yb-vault-tiles')); if (!stats) return;
+  const info = d.yedInfo?.[y.leader] || Object.values(d.yedInfo || {})[0], t = thresholds(info);
+  // rpcversion 6: yed_listclaimable lists in-term vaults too; claimable false = listed, not claimable (above θ).
+  const rows = y.claimable || [], now = rows.filter(isClaimableRow), listed = rows.length - now.length;
   // rpcversion 5: a claim is an intent (status CLAIMING until released or cancelled); no VOID vault
   // is produced after the upgrade, so the void tile shows only when an older one is listed.
   const claiming = (y.vaults || []).filter((v) => v.status === 'CLAIMING').length;
-  tiles.append(tile('active', fmtInt(stats.activeVaults)), tile('claiming', fmtInt(claiming), 'claim intents pending', claiming > 0), tile('claimable', fmtInt((y.claimable || []).length), '', (y.claimable || []).length > 0), tile('closed', fmtInt(stats.closedVaults)), tile('claimed', fmtInt(stats.claimedVaults)));
+  tiles.append(tile('active', fmtInt(stats.activeVaults)), tile('claiming', fmtInt(claiming), 'claim intents pending', claiming > 0), tile('claimable now', fmtInt(now.length), listed ? `${fmtInt(listed)} listed above θ` : '', now.length > 0), tile('closed', fmtInt(stats.closedVaults)), tile('claimed', fmtInt(stats.claimedVaults)));
   if (stats.voidVaults > 0) tiles.append(tile('void', fmtInt(stats.voidVaults), voidSub(y)));
   const el = clear($('yb-vaults')); const tip = d.tip?.height ?? stats.height, pClaim = stats.pClaim;
-  const claimable = new Set((y.claimable || []).map((c) => c.vault));
-  const vs = (y.vaults || []).filter((v) => v.status === 'ACTIVE' && v.mintedCents > 0 && v.collateralZat > 0).map((v) => ({ v, ratio: (v.collateralZat * pClaim) / (v.mintedCents * 1e8), toClaim: v.claimHeight - tip, key: `${v.txid}:${v.vout}` }));
+  const claimable = new Set(now.map((c) => c.vault)), listedSet = new Set(rows.filter((c) => !isClaimableRow(c)).map((c) => c.vault));
+  // In term (rpcversion 6) the claim opens at θ, not at claimHeight: x is the blocks left in the term (to lockHeight).
+  const xField = t.inTerm ? 'lockHeight' : 'claimHeight';
+  const vs = (y.vaults || []).filter((v) => v.status === 'ACTIVE' && v.mintedCents > 0 && v.collateralZat > 0).map((v) => ({ v, ratio: (v.collateralZat * pClaim) / (v.mintedCents * 1e8), toClaim: v[xField] - tip, key: `${v.txid}:${v.vout}` }));
+  renderVaultTable(vs, claimable, listedSet, rows, t);
   if (!vs.length) { el.append(svg('text', { class: 'empty', x: 20, y: 20 }, 'no active vaults')); clear($('yb-vault-legend')); return; }
   const W = el.clientWidth || 400, H = 200; el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const M = { l: 52, r: 12, t: 10, b: 24 };
   const xs = vs.map((p) => p.toClaim), xlo = Math.min(0, ...xs) - 2, xhi = Math.max(10, ...xs) + 2;
-  const ylo = 0, yhi = Math.max(12000, ...vs.map((p) => p.ratio)) * 1.08;
+  const ylo = 0, yhi = Math.max(t.theta + 1000, ...vs.map((p) => p.ratio)) * 1.08;
   const x = (v) => M.l + ((v - xlo) / (xhi - xlo)) * (W - M.l - M.r), yy = (v) => H - M.b - ((v - ylo) / (yhi - ylo)) * (H - M.t - M.b);
   for (const v of ticks(ylo, yhi, 4)) { el.append(svg('line', { class: 'gridline', x1: M.l, x2: W - M.r, y1: yy(v), y2: yy(v) })); el.append(svg('text', { class: 'tick', x: M.l - 4, y: yy(v) + 3, 'text-anchor': 'end' }, pct(v))); }
   for (const v of ticks(xlo, xhi, 5)) el.append(svg('text', { class: 'tick', x: x(v), y: H - 6, 'text-anchor': 'middle' }, String(Math.round(v))));
-  el.append(svg('text', { class: 'tick', x: W - M.r, y: H - M.b - 4, 'text-anchor': 'end' }, 'blocks to claimHeight →'));
+  el.append(svg('text', { class: 'tick', x: W - M.r, y: H - M.b - 4, 'text-anchor': 'end' }, `blocks to ${xField} →`));
   el.append(svg('line', { class: 'axis', x1: x(0), x2: x(0), y1: M.t, y2: H - M.b }));
-  for (const [v, c] of [[11000, 'var(--serious)'], [10500, 'var(--critical)']]) el.append(svg('line', { x1: M.l, x2: W - M.r, y1: yy(v), y2: yy(v), stroke: c, 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
+  for (const [v, c] of [[t.theta, 'var(--serious)'], [t.emerg, 'var(--critical)']]) el.append(svg('line', { x1: M.l, x2: W - M.r, y1: yy(v), y2: yy(v), stroke: c, 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
   const cls = { A: 'var(--s1)', B: 'var(--s2)', C: 'var(--s3)' };
   for (const p of vs) {
-    const isC = claimable.has(p.key), under = p.ratio < 11000;
+    const isC = claimable.has(p.key), under = p.ratio < t.theta;
     const dot = svg('circle', { cx: x(p.toClaim), cy: yy(p.ratio), r: isC ? 7 : 5, fill: cls[p.v.termClass] || 'var(--s6)', 'fill-opacity': 0.85, stroke: isC ? 'var(--critical)' : under ? 'var(--serious)' : 'var(--surface)', 'stroke-width': isC ? 3 : 2 });
-    tooltip(dot, () => `vault ${p.key.slice(0, 16)}…  class ${p.v.termClass}\nratio ${pct(p.ratio)} at pClaim ${usd(pClaim)}  (underwater below ${usd(p.v.underwaterAt)})\nminted ${yed(p.v.mintedCents)} YED  collateral ${yec(p.v.collateralZat)} YEC\nmint ${p.v.mintHeight} → lock ${p.v.lockHeight} → claim ${p.v.claimHeight} (${p.toClaim} blocks)${p.v.noticed ? '\nNOTICED at ' + p.v.noticeHeight : ''}${isC ? '\nCLAIMABLE now' : ''}`);
+    tooltip(dot, () => `vault ${p.key.slice(0, 16)}…  class ${p.v.termClass}\nratio ${pct(p.ratio)} at pClaim ${usd(pClaim)}  (claimable at ${usd(p.v.underwaterAt)}, θ ${pct(t.theta)})\nminted ${yed(p.v.mintedCents)} YED  collateral ${yec(p.v.collateralZat)} YEC\nmint ${p.v.mintHeight} → lock ${p.v.lockHeight} → claim ${p.v.claimHeight} (${p.toClaim} blocks to ${xField})${p.v.noticed ? '\nNOTICED at ' + p.v.noticeHeight : ''}${isC ? '\nCLAIMABLE now' : listedSet.has(p.key) ? '\nlisted, not claimable (above θ)' : ''}`);
     el.append(dot);
   }
   const lg = clear($('yb-vault-legend'));
   for (const c of ['A', 'B', 'C']) lg.append(h('span', {}, h('i', { style: `background:${cls[c]}` }), `class ${c}`));
-  lg.append(h('span', {}, h('i', { class: 'ring' }), 'claimable (yed_listclaimable)'), h('span', { class: 'muted' }, `y = collateral ÷ debt at pClaim ${usd(pClaim)} (claims use pClaim; the global ratio tile uses pMint ${usd(stats.pMint)}); dashed 110 % / 105 %`));
+  lg.append(h('span', {}, h('i', { class: 'ring' }), 'claimable now (yed_listclaimable claimable)'), h('span', { class: 'muted' }, `y = collateral ÷ debt at pClaim ${usd(pClaim)} (claims use pClaim; the global ratio tile uses pMint ${usd(stats.pMint)}); dashed ${pct(t.theta)} / ${pct(t.emerg)}${t.inTerm ? ' · in-term claims: a vault is claimable whenever it is under θ' : ''}`));
+}
+
+// One row per active vault: its claimable-at price (underwaterAt, the price at which it falls under θ) and
+// its claim state; a listed row of yed_listclaimable with claimable false is "listed" (in term, above θ).
+function renderVaultTable(vs, claimable, listedSet, rows, t) {
+  const tb = clear($('yb-vault-table')); if (!tb) return;
+  tb.append(h('tr', {}, ...['vault', 'class', 'ratio', 'claimable at', 'lock', 'claim'].map((c) => h('th', {}, c))));
+  const byKey = new Map(rows.map((c) => [c.vault, c]));
+  for (const p of [...vs].sort((a, b) => a.ratio - b.ratio)) {
+    const row = byKey.get(p.key), state = claimable.has(p.key) ? 'CLAIMABLE now' : listedSet.has(p.key) ? 'listed, above θ' : '–';
+    tb.append(h('tr', { 'data-bad': claimable.has(p.key) ? '1' : '0' }, h('td', {}, h('code', {}, `${p.key.slice(0, 10)}…`)), h('td', {}, p.v.termClass || '–'), h('td', {}, pct(p.ratio)),
+      h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state)));
+  }
+  if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 6, class: 'muted' }, 'no active vaults')));
 }
 
 // The void tile's sub-line: how many listed VOID vaults are unarmed mints (H-1).

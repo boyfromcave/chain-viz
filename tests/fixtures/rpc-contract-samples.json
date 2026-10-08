@@ -1,5 +1,5 @@
 {
- "_source": "ycash-dd upgrade/vault doc/yellowback-rpc-contract.json rpcversion 5, the \"returns\" samples (yed_*); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md)",
+ "_source": "ycash-dd upgrade/vault-in-term doc/yellowback-rpc-contract.json rpcversion 6 (make spec-in-term), the \"returns\" samples (yed_*); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md)",
  "set_getinfo": {
   "active": 1,
   "admitkey": "02c3ac780b7c19de91e8a70b6c80a168fc7cd32b326aef9c677f5c98157e78fb7d",
@@ -334,19 +334,27 @@
    },
    "attestorSetId": "5e755e755e755e755e755e755e755e755e755e755e755e755e755e755e755e75",
    "claimDelay": 10,
+   "claimThresholdBps": 12500,
    "classes": [
     {
-     "baseRatioBps": 50000,
+     "baseRatioBps": 30000,
      "class": "A",
+     "earlyRedeemFeeBps": 500,
      "maxBlocks": 96,
      "minBlocks": 48
     }
+   ],
+   "earlyRedeemFeeBps": [
+    500,
+    250,
+    100
    ],
    "feeBps": 25,
    "feeMinZat": 50000000,
    "feeZat": 1000,
    "globalRatioHaltBps": 25000,
    "grace": 24,
+   "inTermClaims": true,
    "minFill": {
     "fast": 4,
     "mid": 16,
@@ -363,6 +371,7 @@
    "recapRatioBps": 50000,
    "refLag": 2,
    "refWindow": 40,
+   "sigmaMultMaxBps": 10000,
    "sigmaRefBps": 0,
    "startHeight": 103,
    "supplyCapBps": 0,
@@ -375,7 +384,7 @@
   },
   "protectedByIndex": true,
   "rebuilt": false,
-  "rpcversion": 5,
+  "rpcversion": 6,
   "startHeight": 103,
   "supplyCapReached": false,
   "unhealthyReason": "",
@@ -414,5 +423,25 @@
   "supplyCents": 250000,
   "unbackedCents": 0,
   "voidVaults": 1
- }
+ },
+ "yed_listclaimable": [
+  {
+   "attestFeeZat": 157430730,
+   "claimHeight": 401,
+   "claimPath": "a",
+   "claimable": true,
+   "collateralZat": 251889169000,
+   "emergencyOpenAt": null,
+   "feeZat": 629722922,
+   "lockHeight": 377,
+   "mintedCents": 100000,
+   "noticeHeight": null,
+   "noticed": false,
+   "ownerAddress": "yrExampleOwnerAddress111111111111111",
+   "pClaim": 400000,
+   "residualZat": 0,
+   "underwaterAt": 436700,
+   "vault": "6a1f2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8:0"
+  }
+ ]
 }
