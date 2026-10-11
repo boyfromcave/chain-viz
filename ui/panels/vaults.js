@@ -7,7 +7,7 @@
 // Self-contained like health.js: builds its own <section>, fetches GET /api/vaults once per new
 // block and on vault_spend / set_act / set_state events. Field names are the node's
 // (ycash-dd doc/vault-rpc.md: lowercase), plus the collector's `rate`, `yed`, `blocksToRelease`.
-import { h, clear, fmtInt } from '../lib.js';
+import { h, clear, fmtInt, pqSchemeShort, shortAddr } from '../lib.js';
 
 const $ = (id) => document.getElementById(id);
 const yec = (v) => (v === null || v === undefined ? '–' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 8 }));
@@ -136,11 +136,11 @@ function renderIntents(d) {
 
 function renderVaults(d) {
   const t = clear($('vp-vaults'));
-  t.append(h('tr', {}, ...['vault', 'tag', 'value YEC', 'set', 'cancel set', 'delay', 'owner height', 'app height', 'confirmed'].map((c) => h('th', {}, c))));
+  t.append(h('tr', {}, ...['vault', 'tag', 'value YEC', 'set', 'cancel set', 'delay', 'owner', 'owner height', 'app height', 'confirmed'].map((c) => h('th', {}, c))));
   for (const x of (d.vaults || []).slice(0, 100)) t.append(h('tr', {},
     h('td', { class: 'mono' }, op(x.outpoint)), h('td', {}, x.tagtext || x.tag), h('td', {}, yec(x.value)), h('td', { class: 'mono' }, id8(x.setid), ' ', yedMark(d, x.setid)),
-    h('td', { class: 'mono' }, x.cancelsetid === x.setid ? 'same' : id8(x.cancelsetid)), h('td', {}, String(x.delay)), h('td', {}, String(x.ownerheight)), h('td', {}, x.appheight ? String(x.appheight) : 'off'), h('td', {}, String(x.height))));
-  if (!(d.vaults || []).length) t.append(h('tr', {}, h('td', { colspan: 9, class: 'muted' }, 'no vaults')));
+    h('td', { class: 'mono' }, x.cancelsetid === x.setid ? 'same' : id8(x.cancelsetid)), h('td', {}, String(x.delay)), ownerCell(x), h('td', {}, String(x.ownerheight)), h('td', {}, x.appheight ? String(x.appheight) : 'off'), h('td', {}, String(x.height))));
+  if (!(d.vaults || []).length) t.append(h('tr', {}, h('td', { colspan: 10, class: 'muted' }, 'no vaults')));
 }
 
 const ACTION_TEXT = { unlock: 'UNLOCK → intents', release: 'RELEASE', cancel: 'CANCEL', owner: 'OWNER', 'owner-released': 'OWNER (released set)', app: 'APP (module)', spent: 'spent' };
@@ -150,7 +150,7 @@ function renderSpends(d) {
   for (const x of (d.spends || []).slice(0, 60)) t.append(h('tr', { 'data-action': x.action },
     h('td', {}, String(x.height ?? '–')), h('td', {}, h('span', { class: 'vp-action', 'data-a': x.action }, ACTION_TEXT[x.action] || x.action)), h('td', {}, x.kind),
     h('td', { class: 'mono' }, op(x.outpoint)), h('td', {}, x.tagtext || x.tag || ''), h('td', {}, yecZat(x.valuezat)), h('td', { class: 'mono' }, x.txid ? x.txid.slice(0, 12) + '…' : '–'),
-    h('td', { class: 'mono' }, x.returnedTo ? op(x.returnedTo) : ''), h('td', { class: 'muted' }, x.inferred ? 'inferred' : x.selector ? `selector ${x.selector}` : '')));
+    h('td', { class: 'mono' }, x.returnedTo ? op(x.returnedTo) : ''), h('td', { class: 'muted' }, x.inferred ? 'inferred' : x.selector ? `selector ${x.selector}${x.pqscheme ? ' · ' + pqSchemeShort(x.pqscheme) + ' signature' : ''}` : '')));
   if (!(d.spends || []).length) t.append(h('tr', {}, h('td', { colspan: 9, class: 'muted' }, 'no vault or intent spends seen yet')));
 }
 
@@ -159,4 +159,11 @@ function renderActs(d) {
   t.append(h('tr', {}, ...['height', 'act', 'set', 'txid'].map((c) => h('th', {}, c))));
   for (const a of (d.acts || []).slice(0, 40)) t.append(h('tr', {}, h('td', {}, String(a.height)), h('td', {}, a.type), h('td', { class: 'mono' }, id8(a.setid), ' ', yedMark(d, a.setid)), h('td', { class: 'mono' }, a.txid.slice(0, 12) + '…')));
   if (!(d.acts || []).length) t.append(h('tr', {}, h('td', { colspan: 4, class: 'muted' }, 'no set acts seen yet')));
+}
+
+// The owner of a V or I (the quantum line, doc/vault-rpc.md "Owners"): its post-quantum scheme and PQ address
+// (`owneraddress`, added by the collector from the pqkeyid `owner`).
+function ownerCell(x) {
+  if (!x.owner) return h('td', { class: 'muted' }, '–');
+  return h('td', { class: 'mono', title: `owner ${x.ownerschemename || 'scheme ' + x.ownerscheme}\n${x.owneraddress || ''}\npqkeyid ${x.owner}` }, pqSchemeShort(x.ownerscheme), ' ', shortAddr(x.owneraddress || x.owner));
 }

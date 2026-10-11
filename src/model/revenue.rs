@@ -155,6 +155,8 @@ pub struct RevenueModel {
     /// Heights whose rows were evicted below the window.
     evicted: u64,
     prefix: Option<[u8; 2]>,
+    /// The plain-YEC PQ address version of the chain (`sq…`/`tq…`/`rq…`, D-Q-20), from its name.
+    pq_prefix: Option<[u8; 2]>,
     keep: u64,
     /// The fund's address as last attributed. 6.20.0's `getblocksubsidy` no longer names it
     /// (only `miner founders totalblocksubsidy`), so it is learned from a coinbase where exactly
@@ -218,13 +220,27 @@ impl RevenueModel {
         }
     }
 
-    /// The address of an output: `scriptPubKey.addresses[0]`, else encoded from a P2PKH hex.
+    /// The chain's name (`getblockchaininfo.chain`): fixes the PQ address version.
+    pub fn set_chain(&mut self, chain: &str) {
+        self.pq_prefix = crate::pq::plain_version(chain);
+    }
+
+    /// The address of an output: `scriptPubKey.addresses[0]`, else encoded from a P2PKH hex, a
+    /// `TX_PQPKH` (rpcversion 7: the owner's residual pays `PQPKH(owner)`, quantum spec F-3) or a
+    /// `TX_PQCHANNEL` (under its client, as `yed_listtokens` lists a channel's YED).
     pub fn address_of(&self, script_pub_key: &Value) -> Option<String> {
         if let Some(a) = script_pub_key.get("addresses").and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_str) {
             return Some(a.to_string());
         }
         let hex = script_pub_key.get("hex").and_then(Value::as_str)?;
         let script = hex::decode(hex).ok()?;
+        let pq = crate::pq::pqpkh(&script).map(|o| (o, "")).or_else(|| crate::pq::pqchannel(&script).map(|c| ((c.scheme, c.client_hash), "pqchannel:")));
+        if let Some(((scheme, h), tag)) = pq {
+            return Some(match self.pq_prefix {
+                Some(v) => format!("{}{}", tag, crate::pq::encode(v, scheme, &h)),
+                None => format!("{}pqkeyid:{:02x}{}", tag, scheme, hex::encode(h)),
+            });
+        }
         let hash = p2pkh_hash(&script)?;
         Some(match self.prefix {
             Some(p) => encode_address(p, &hash),
@@ -736,6 +752,27 @@ mod tests {
         m.learn_prefix("smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4");
         assert_eq!(m.address_of(&json!({"hex": "76a9143adc5831726e1b524b0549a1cea8922e01610c7388ac"})).unwrap(), "smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4");
         assert_eq!(m.address_of(&json!({"addresses": ["x"], "hex": "00"})).unwrap(), "x");
+    }
+
+    /// rpcversion 7: a PQPKH output (the residual's `PQPKH(owner)`) and a channel output name a
+    /// PQ address; before the chain is known, the pqkeyid.
+    #[test]
+    fn pq_payees() {
+        use crate::pq::tests::{channel_script, pqpkh_script};
+        let mut m = RevenueModel::new(100);
+        let pkh = json!({"hex": hex::encode(pqpkh_script(1, [0x42; 32]))});
+        let ch = json!({"hex": hex::encode(channel_script(2, [0x43; 32], &[0x10]))});
+        assert_eq!(m.address_of(&pkh).unwrap(), format!("pqkeyid:01{}", "42".repeat(32)));
+        assert_eq!(m.address_of(&ch).unwrap(), format!("pqchannel:pqkeyid:02{}", "43".repeat(32)));
+        m.set_chain("regtest");
+        let a = m.address_of(&pkh).unwrap();
+        assert!(a.starts_with("rq") && a.len() == 53, "{}", a);
+        assert_eq!(crate::pq::decode(&a), Some(([0x4C, 0x51], 1, [0x42; 32])));
+        let c = m.address_of(&ch).unwrap();
+        assert!(c.starts_with("pqchannel:rq") && c.len() == 63, "{}", c);
+        // a 39-byte address does not set the 20-byte prefix
+        m.learn_prefix(&a);
+        assert_eq!(m.address_of(&json!({"hex": "76a9143adc5831726e1b524b0549a1cea8922e01610c7388ac"})).unwrap(), "hash160:3adc5831726e1b524b0549a1cea8922e01610c73");
     }
 
     #[test]

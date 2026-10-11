@@ -239,6 +239,8 @@ async fn main() {
     bus.publish(None, None, chain_viz::session::header(nodes.iter().map(|n| n.id.clone()).collect(), chain.clone()));
 
     let mut model = Model { chain: chain_viz::model::chain::ChainModel::new(cli.keep), revenue: chain_viz::model::revenue::RevenueModel::new(cli.keep), ..Default::default() };
+    model.revenue.set_chain(&chain);
+    model.vault.set_chain(&chain);
     model.chain_name = chain;
     let model = Arc::new(tokio::sync::RwLock::new(model));
     let collector = Arc::new(Collector { model: model.clone(), bus: bus.clone(), clients: clients.clone(), poll, devnet_dir: cli.devnet.clone(), backfill: Default::default() });

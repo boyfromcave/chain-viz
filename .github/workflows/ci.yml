@@ -22,8 +22,9 @@ name: ci
 on:
   push:
     # The one branch list: harden/yellowback (P1 hardening), upgrade/vault (the network upgrade),
-    # upgrade/vault-in-term (in-term claims, rpcversion 6), main (the branch of record, AGENTS.md rule 2).
-    branches: &branches [main, harden/yellowback, upgrade/vault, upgrade/vault-in-term]
+    # upgrade/vault-in-term (in-term claims, rpcversion 6), upgrade/quantum-vaults (post-quantum owners,
+    # rpcversion 7), main (the branch of record, AGENTS.md rule 2).
+    branches: &branches [main, harden/yellowback, upgrade/vault, upgrade/vault-in-term, upgrade/quantum-vaults]
   pull_request:
     branches: *branches
   workflow_dispatch:
@@ -117,7 +118,8 @@ jobs:
   # `node-bin`, ycash-dd's node-bin.tar with src/ycashd and src/ycash-cli executable; 3 days).
   # Node branch: upgrade/vault -> upgrade/vault (whose
   # devnet tool activates the Vault upgrade itself), upgrade/vault-in-term -> upgrade/vault-in-term
-  # (the in-term node, rpcversion 6), harden/yellowback -> harden/yellowback,
+  # (the in-term node, rpcversion 6), upgrade/quantum-vaults -> upgrade/quantum-vaults (rpcversion 7),
+  # harden/yellowback -> harden/yellowback,
   # anything else -> ycash-dd's branch of record. The devnet tool lives in the node tree and needs
   # its Python test framework, so the tree is checked out whole beside chain-viz, the workspace
   # layout the tool expects (ws/ycash-dd, ws/chain-viz).
@@ -142,7 +144,7 @@ jobs:
         id: node
         run: |
           case "$REF_NAME" in
-            upgrade/vault|upgrade/vault-in-term|harden/yellowback) branch=$REF_NAME ;;
+            upgrade/vault|upgrade/vault-in-term|upgrade/quantum-vaults|harden/yellowback) branch=$REF_NAME ;;
             *) branch=$NODE_OF_RECORD ;;
           esac
           echo "branch=$branch" >> "$GITHUB_OUTPUT"

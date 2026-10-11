@@ -50,6 +50,8 @@ pub fn apply(model: &mut Model, e: &Event) {
         EventKind::Session { nodes, chain, .. } => {
             if !chain.is_empty() {
                 model.chain_name = chain.clone();
+                model.revenue.set_chain(chain);
+                model.vault.set_chain(chain);
             }
             for id in nodes {
                 model.nodes.entry(id.clone()).or_insert_with(|| NodeView {

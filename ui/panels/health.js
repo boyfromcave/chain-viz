@@ -7,7 +7,7 @@
 // renders with plain SVG. Follows the panel contract of app.js: `init(store)`, `render(ctx)`.
 // Field names are the node's (doc/yellowback-rpc-contract.json): pFast/pMid/pSlow/pMint/pClaim
 // in micro-USD, supplyCents, collateralZat, globalRatioBps, haltMask, claimHeight, …
-import { h, svg, clear, fmtInt, tooltip } from '../lib.js';
+import { h, svg, clear, fmtInt, tooltip, pqSchemeShort, shortAddr, PQ_SCHEMES } from '../lib.js';
 
 const $ = (id) => document.getElementById(id);
 const usd = (micro) => (micro === null || micro === undefined ? '–' : `$${(micro / 1e6).toFixed(4)}`);
@@ -16,8 +16,10 @@ const yed = (cents) => (cents === null || cents === undefined ? '–' : (cents /
 const pct = (bps) => (bps === null || bps === undefined ? '–' : `${(bps / 100).toFixed(1)} %`);
 // The claim threshold θ and the emergency ratio a node reports (yed_getinfo.params). rpcversion 6 (the
 // in-term claims line, upgrade/vault-in-term): θ 125 %, inTermClaims true, earlyRedeemFeeBps per class
-// A/B/C; an rpcversion-5 node has no inTermClaims and the upgrade line's 110 %.
-const KNOWN_RPCVERSION = 6;
+// A/B/C; an rpcversion-5 node has no inTermClaims and the upgrade line's 110 %. rpcversion 7 (the
+// post-quantum line, upgrade/quantum-vaults): PQ owners (ownerScheme / ownerHash / a 53-character ownerAddress),
+// params.pq, a version-4 MINT payload; 6 and 7 are both modelled, any other version or a mix of them warns.
+const KNOWN_RPCVERSIONS = [7, 6];
 function thresholds(info) {
   const p = info?.params || {};
   return { theta: p.claimThresholdBps ?? 11000, emerg: p.attest?.emergencyRatioBps ?? 10500, inTerm: p.inTermClaims === true, fees: p.earlyRedeemFeeBps || [], claimDelay: p.claimDelay };
@@ -108,10 +110,11 @@ function renderRibbon(y, info, stats, d) {
     pill(info.healthy ? 'healthy' : `unhealthy ${info.unhealthyReason || ''}`, info.healthy, info.healthy ? 'good' : 'critical'),
     // rpcversion 4 (hardening H-1): with mintRequiresArmed a mint at an unarmed R is invalid (mint-halted-unarmed)
     pill(info.mintRequiresArmed ? 'mint requires ARMED' : 'mint without ARMED', !!info.mintRequiresArmed, 'good'),
-    versions.length === 1 && versions[0] === KNOWN_RPCVERSION ? null : pill(`rpcversion ${versions.join('/')} (chain-viz models ${KNOWN_RPCVERSION})`, true, 'warning'),
+    versions.length === 1 && KNOWN_RPCVERSIONS.includes(versions[0]) ? null : pill(`rpcversion ${versions.join('/')} (chain-viz models ${KNOWN_RPCVERSIONS.join(' or ')})`, true, 'warning'),
     h('span', { class: 'yb-sep' }),
     h('span', { class: 'yb-state' }, h('b', {}, 'upgrade'), up ? ` ${up.name} ${(up.status || '?').toUpperCase()} ` : ' – ', h('span', { class: 'muted' }, up ? `branch ${up.branchId} · from ${up.activationHeight} · claim delay ${up.claimDelay} · attestor set ${(up.attestorSetId || '–').slice(0, 10)}…` : 'no upgrade object (a node before rpcversion 5)')),
     claimsState(info),
+    pqState(info),
     h('span', { class: 'yb-state' }, h('b', {}, 'arming'), ` ${att.status || '?'} `, h('span', { class: 'muted' }, `${att.seatedCount ?? '–'} seated · pool ${att.poolSize ?? '–'} (fresh ${att.poolFresh ?? '–'}) · trigger ${att.triggerHeight ?? '–'} · arm ${att.armHeight ?? '–'}`)),
     h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, mintingWhy(info, stats))),
     noPriceState(y.noPrice),
@@ -120,6 +123,16 @@ function renderRibbon(y, info, stats, d) {
   const alarm = $('yb-alarm');
   if (y.statehash_agree === false) { alarm.hidden = false; clear(alarm).append(h('b', {}, 'STATE HASH MISMATCH'), ` healthy nodes on the same tip disagree on yed_getstatehash: `, ...Object.entries(y.statehash).map(([n, v]) => h('code', {}, `${n}:${v.statehash.slice(0, 10)} `))); }
   else alarm.hidden = true;
+}
+
+// rpcversion 7 (the quantum line): yed_getinfo.params.pq, the owner schemes MINT-3 admits at the next block, the
+// Falcon activation height (-1 = never) and the size-priced fee rate wallets charge (max(DEFAULT_FEE, rate × size)).
+function pqState(info) {
+  const pq = info?.params?.pq; if (!pq) return null;
+  const schemes = (pq.schemes || []).map((n) => PQ_SCHEMES[n] || `scheme ${n}`).join(' + ') || '–';
+  const falcon = pq.falconActive ? 'Falcon ACTIVE' : pq.falconHeight >= 0 ? `Falcon from ${pq.falconHeight}` : 'Falcon off';
+  return h('span', { class: 'yb-state', title: 'yed_getinfo.params.pq: schemes, falconActive, falconHeight, feeRateZatPerKB; MINT payload version ' + (info.params?.attest?.mintPayloadVersion ?? '–') },
+    h('b', {}, 'post-quantum'), ` ${schemes} `, h('span', { class: 'muted' }, `${falcon} · fee ${pq.feeRateZatPerKB ?? '–'} zat/KB`));
 }
 
 // The claim rule's parameters (rpcversion 6, in-term IT-7 / IT-9): whether a claim is valid in term, θ, the
@@ -333,14 +346,22 @@ function renderVaults(y, stats, d) {
 // its claim state; a listed row of yed_listclaimable with claimable false is "listed" (in term, above θ).
 function renderVaultTable(vs, claimable, listedSet, rows, t) {
   const tb = clear($('yb-vault-table')); if (!tb) return;
-  tb.append(h('tr', {}, ...['vault', 'class', 'ratio', 'claimable at', 'lock', 'claim'].map((c) => h('th', {}, c))));
+  tb.append(h('tr', {}, ...['vault', 'class', 'ratio', 'claimable at', 'lock', 'claim', 'owner'].map((c) => h('th', {}, c))));
   const byKey = new Map(rows.map((c) => [c.vault, c]));
   for (const p of [...vs].sort((a, b) => a.ratio - b.ratio)) {
     const row = byKey.get(p.key), state = claimable.has(p.key) ? 'CLAIMABLE now' : listedSet.has(p.key) ? 'listed, above θ' : '–';
     tb.append(h('tr', { 'data-bad': claimable.has(p.key) ? '1' : '0' }, h('td', {}, h('code', {}, `${p.key.slice(0, 10)}…`)), h('td', {}, p.v.termClass || '–'), h('td', {}, pct(p.ratio)),
-      h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state)));
+      h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state), ownerCell(p.v)));
   }
-  if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 6, class: 'muted' }, 'no active vaults')));
+  if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'no active vaults')));
+}
+
+// The vault owner (rpcversion 7): its post-quantum scheme and PQ address, a vault identifier and never a YED
+// receive address (quantum clients C-10). An older node's row has neither.
+function ownerCell(v) {
+  if (v.ownerScheme === undefined && !v.ownerAddress) return h('td', { class: 'muted' }, '–');
+  return h('td', { class: 'mono', title: `vault owner (post-quantum): ${PQ_SCHEMES[v.ownerScheme] || 'scheme ' + v.ownerScheme}\n${v.ownerAddress || ''}\nkey hash ${v.ownerHash || '–'}` },
+    h('span', { class: 'yb-pq' }, pqSchemeShort(v.ownerScheme)), ' ', shortAddr(v.ownerAddress));
 }
 
 // The void tile's sub-line: how many listed VOID vaults are unarmed mints (H-1).

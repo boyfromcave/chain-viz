@@ -54,6 +54,10 @@ pub struct BlockInfo {
     /// The Yellowback view (C3): tag, miner, rejected, its Yellowback transactions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub yb: Option<BlockYb>,
+    /// The quantum line: scriptSig bytes of the inputs that carry a post-quantum signature
+    /// (`pq::block_pq_bytes`), for blocks fetched in full; the UI shows its share of `size`.
+    #[serde(default, rename = "pqBytes", skip_serializing_if = "Option::is_none")]
+    pub pq_bytes: Option<u64>,
 }
 
 impl BlockInfo {
@@ -71,6 +75,7 @@ impl BlockInfo {
             seen,
             txids: b.tx.clone(),
             yb: None,
+            pq_bytes: None,
         }
     }
     pub fn event(&self) -> BlockEvent {
@@ -251,6 +256,7 @@ impl ChainModel {
                 seen,
                 txids: Vec::new(),
                 yb: None,
+                pq_bytes: None,
             };
             let ev = info.event();
             self.blocks.insert(t.hash.clone(), info);
@@ -363,6 +369,7 @@ impl ChainModel {
             seen,
             txids: Vec::new(),
             yb: None,
+            pq_bytes: None,
         });
         info.status = BlockStatus::Main;
         if info.prev.is_none() {
@@ -389,6 +396,7 @@ impl ChainModel {
             seen,
             txids: Vec::new(),
             yb: None,
+            pq_bytes: None,
         });
     }
 

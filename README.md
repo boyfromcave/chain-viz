@@ -241,7 +241,7 @@ fees, median age, transactions older than 2 blocks (a pool filtering it, or a fe
 policy), *partial* = present on some nodes but not all (propagation, or a stock node refusing
 what it does not understand).
 
-**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 6, the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C, the claim delay), the vault
+**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 6 or 7 or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C, the claim delay), the vault
 upgrade from `yed_getinfo.upgrade` (status, branch ID, activation height, claim delay, the YED
 attestor set), arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
 `UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
@@ -253,7 +253,8 @@ the four halt-mask bits rpcversion 5 can set and refused-block ticks, backfilled
 collateral tiles with the global ratio against the node's claim threshold θ and emergency lines (125 % and
 105 % on the in-term line); a vault scatter (ratio × blocks to `lockHeight` when claims are valid in term, to
 `claimHeight` otherwise; vaults claimable now ringed) and a vault table (ratio, the claimable-at price
-`underwaterAt`, and `CLAIMABLE now` or `listed, above θ` for a `yed_listclaimable` row with `claimable: false`);
+`underwaterAt`, and `CLAIMABLE now` or `listed, above θ` for a `yed_listclaimable` row with `claimable: false`,
+and on rpcversion 7 the owner: its post-quantum scheme and 53-character `ownerAddress`, a vault identifier, never a YED receive address);
 the attestor table; state-hash
 agreement per node and the refused blocks with their verdicts; the Yellowback
 transaction table (a refused mint's verdict, e.g. `mint-halted-unarmed`, carries an explanation
@@ -425,8 +426,18 @@ YecWallet or the CLI.
 
 ## rpcversion
 
-chain-viz models `yed_*` at **rpcversion 6** on this branch (`upgrade/vault-in-term`, the in-term claims line;
-`KNOWN_RPC_VERSION` in `src/rpc.rs`; rpcversion 5 is the vault upgrade): `yed_listclaimable` lists every
+chain-viz models `yed_*` at **rpcversion 7** on this branch (`upgrade/quantum-vaults`, the post-quantum line;
+`KNOWN_RPC_VERSION` in `src/rpc.rs`) and at 6 (`MODELLED_RPC_VERSIONS`). rpcversion 7 (the workspace's
+`docs/plans/yellowback-quantum-rpc-delta.md`): every vault owner is a post-quantum key (`ownerScheme`, `ownerHash`
+and a 53-character `ownerAddress`; `ownerPubKey` / `ownerKeyId` are gone), a MINT's payload is version 4 (owner =
+scheme ‖ key hash at payload offsets 17..49; every other type stays version 3, and `src/classify.rs` accepts a MINT
+at either version, so it observes both lines), `yed_getinfo.params.pq` carries the schemes, the Falcon height and
+the size-priced fee rate; the vault primitive lists `owner` (a pqkeyid) and `ownerscheme`, to which `/api/vaults`
+adds `owneraddress` and `ownerschemename`. A `TX_PQPKH` output (`20 <keyHash> 51|52 c2`) is a payee by its plain-YEC
+PQ address (`sq…`/`tq…`/`rq…`, what `getblock` spells), a `TX_PQCHANNEL` output by `pqchannel:` and its client's;
+an input carrying the chunked PQ signature stack counts toward a block's `pqBytes` (its share of the block is in the
+block tooltip) and an owner spend's `pqscheme` (`src/pq.rs`). rpcversion 6 is the in-term claims line
+(`upgrade/vault-in-term`; rpcversion 5 is the vault upgrade): `yed_listclaimable` lists every
 ACTIVE vault whose claim branch is open, in term too, and a row with `claimable: false` is listed but not
 claimable (above θ; its `underwaterAt` is the price at which it becomes so; a row without the field, from an
 rpcversion-5 node, is claimable), `yed_getinfo.params` carries `inTermClaims`, `claimThresholdBps` and
@@ -436,7 +447,7 @@ wallets, which refuse a node whose `rpcversion` is not exactly theirs (they woul
 transactions from shapes they do not know), chain-viz is an observer and never refuses a node:
 an older node still parses (fields chain-viz does not model land in `extra`; it has no
 `upgrade`), and the
-health ribbon shows a warning pill naming the versions when any node is not at 6.
+health ribbon shows a warning pill naming the versions when any node is at neither 6 nor 7, or the nodes mix them.
 
 ## The RPC budget
 

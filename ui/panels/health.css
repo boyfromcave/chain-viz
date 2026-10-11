@@ -64,3 +64,4 @@
 #panel-health .yb-agree[data-agree="na"] { color: var(--muted); }
 #panel-health .yb-verdict { font-size: 12px; color: var(--serious); }
 @media (max-width: 800px) { #panel-health .yb-grid { grid-template-columns: 1fr; } }
+#panel-health .yb-pq { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 10px; font-weight: 600; background: color-mix(in oklab, var(--s4) 16%, var(--surface)); }

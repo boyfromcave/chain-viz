@@ -88,7 +88,7 @@ function renderDag({ store }) {
     g.append(svg('rect', { width: BW, height: BH }));
     g.append(svg('text', { x: 6, y: 14, 'font-weight': 600 }, String(n.b.height)));
     g.append(svg('text', { class: 'hash', x: BW - 6, y: 14, 'text-anchor': 'end' }, short(n.b.hash)));
-    g.append(svg('text', { class: 'meta', x: 6, y: 28 }, `${n.b.txCount ?? '?'} tx · ${fmtBytes(n.b.size)}`));
+    g.append(svg('text', { class: 'meta', x: 6, y: 28 }, `${n.b.txCount ?? '?'} tx · ${fmtBytes(n.b.size)}${pqShare(n.b) ? ' · PQ ' + pqShare(n.b) : ''}`));
     // Badge row: miner (from the tag's payoutKey or coinbase, C3 supplies `miner`), tag price, or placeholders.
     let bx = 6;
     const badge = (text, cls) => {
@@ -102,7 +102,7 @@ function renderDag({ store }) {
     badge(miner ? String(miner).slice(0, 8) : 'miner ?', 'miner-bg');
     if (tag) badge(`$${(tag.priceMicroUsd / 1e6).toFixed(3)}`, 'badge-bg');
     else badge('no tag', 'badge-bg');
-    tooltip(g, () => `height ${n.b.height}  ${n.b.status}${n.b.sideStatus ? ' (' + n.b.sideStatus + ', branchlen ' + n.b.branchlen + ')' : ''}\n${n.b.hash}\nprev ${n.b.prev || '?'}\n${n.b.txCount} tx, ${fmtBytes(n.b.size)}\ntime ${fmtTime(n.b.time)}  seen ${n.b.seen ? fmtTime(n.b.seen) : '?'}\nnodes: ${(n.b.nodes || []).join(', ') || '–'}${miner ? '\nminer ' + miner : ''}${tag ? '\ntag price $' + tag.priceMicroUsd / 1e6 : ''}${n.b.rejected ? '\nREFUSED: YED-invalid (yed_getblockverdict)' : ''}`);
+    tooltip(g, () => `height ${n.b.height}  ${n.b.status}${n.b.sideStatus ? ' (' + n.b.sideStatus + ', branchlen ' + n.b.branchlen + ')' : ''}\n${n.b.hash}\nprev ${n.b.prev || '?'}\n${n.b.txCount} tx, ${fmtBytes(n.b.size)}${n.b.pqBytes ? ` (post-quantum signatures ${fmtBytes(n.b.pqBytes)}, ${pqShare(n.b)})` : ''}\ntime ${fmtTime(n.b.time)}  seen ${n.b.seen ? fmtTime(n.b.seen) : '?'}\nnodes: ${(n.b.nodes || []).join(', ') || '–'}${miner ? '\nminer ' + miner : ''}${tag ? '\ntag price $' + tag.priceMicroUsd / 1e6 : ''}${n.b.rejected ? '\nREFUSED: YED-invalid (yed_getblockverdict)' : ''}`);
     boxes.append(g);
   }
   el.append(edges, boxes);
@@ -146,3 +146,7 @@ function renderReorgs({ store }) {
       `depth ${r.depth}: ${short(r.from)} → ${short(r.to)} @ ${fmtInt(r.toHeight)}`));
   }
 }
+
+// The quantum line: the share of a block's bytes that are post-quantum signature stacks (the scriptSigs of inputs
+// carrying one; the collector's pqBytes, blocks fetched in full only). '' when there is none.
+function pqShare(b) { return b.pqBytes > 0 && b.size > 0 ? `${((100 * b.pqBytes) / b.size).toFixed(b.pqBytes * 10 >= b.size ? 0 : 1)} %` : ''; }

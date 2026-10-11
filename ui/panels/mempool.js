@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://www.opensource.org/licenses/mit-license.php .
 
-// Mempool panel (plan §3.2.2): bubbles by fee rate × time in mempool (radius ~ size), grey unless the
+// Mempool panel (plan §3.2.2): bubbles by fee rate × time in mempool (radius ~ log size), grey unless the
 // entry carries `yb.type` (C3), tiles for count/bytes/fees/median age, a >2-block flag, and a dashed
 // red ring for a tx present on some nodes but not all.
 import { h, svg, clear, fmtInt, fmtBytes, fmtSecs, fmtYec, median, tooltip, YB_TYPE_SLOT, ybSlotKey, slotVar } from '../lib.js';
@@ -48,7 +48,8 @@ export function render({ store, now }) {
   if (med !== undefined) { el.append(svg('line', { class: 'median', x1: x(med), x2: x(med), y1: M.t, y2: H - M.b })); el.append(svg('text', { class: 'median-label', x: x(med) + 3, y: H - M.b - 4 }, `median ${fmtSecs(med)}`)); }
   const maxSize = Math.max(1, ...txs.map((v) => v.t.size));
   for (const v of txs) {
-    const r = 4 + 8 * Math.sqrt(v.t.size / maxSize);
+    // log scale: one 8 KB post-quantum owner spend must not squash every 250-byte transaction to a dot
+    const r = 4 + 8 * (Math.log1p(v.t.size) / Math.log1p(maxSize));
     const dot = svg('circle', { class: `dot${v.partial ? ' partial' : ''}${v.stale ? ' stale' : ''}`, cx: x(v.age), cy: y(v.rate), r, fill: colour(v.t), 'fill-opacity': 0.85 });
     tooltip(dot, () => `${v.t.txid}\n${v.t.yb ? v.t.yb.type + ' ' + (v.t.yb.verdict || '') + '\n' : ''}${fmtBytes(v.t.size)}  fee ${fmtYec(v.t.fee)} YEC  ${v.rate.toFixed(1)} zat/B\nage ${fmtSecs(v.age)}${v.stale ? ' (> 2 blocks)' : ''}\npresent on ${v.t.present.length}/${nodesUp} nodes: ${v.t.present.join(', ')}${v.partial ? '  ← not everywhere' : ''}${v.t.depends?.length ? '\ndepends ' + v.t.depends.length : ''}`);
     el.append(dot);
@@ -56,7 +57,7 @@ export function render({ store, now }) {
   const legend = clear($('mempool-legend'));
   legend.append(h('span', {}, h('i', { style: 'background:var(--mark)' }), 'ordinary tx'));
   for (const type of [...new Set(txs.map((v) => ybSlotKey(v.t.yb)).filter(Boolean))]) legend.append(h('span', {}, h('i', { style: `background:${slotVar(YB_TYPE_SLOT[type] || 's6')}` }), type));
-  legend.append(h('span', {}, h('i', { class: 'ring' }), 'not on every node'), h('span', {}, 'size ~ area'));
+  legend.append(h('span', {}, h('i', { class: 'ring' }), 'not on every node'), h('span', {}, 'radius ~ log size'));
   const table = clear($('mempool-table'));
   table.append(h('tr', {}, ...['txid', 'type', 'size', 'fee', 'zat/B', 'age', 'nodes'].map((c) => h('th', {}, c))));
   for (const v of txs.sort((a, b) => b.rate - a.rate).slice(0, 100)) table.append(h('tr', {}, h('td', {}, v.t.txid.slice(0, 16) + '…'), h('td', {}, v.t.yb?.type || ''), h('td', {}, fmtBytes(v.t.size)), h('td', {}, fmtYec(v.t.fee)), h('td', {}, v.rate.toFixed(1)), h('td', {}, fmtSecs(v.age)), h('td', {}, `${v.t.present.length}/${nodesUp}`)));

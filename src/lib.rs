@@ -13,6 +13,7 @@ pub mod collector;
 pub mod events;
 pub mod export;
 pub mod model;
+pub mod pq;
 pub mod public;
 pub mod replay;
 pub mod rpc;

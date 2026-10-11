@@ -15,7 +15,11 @@
 //!   `OP_1..16`; the data is 4..80 bytes (`MIN_PAYLOAD`/`MAX_PAYLOAD`, `params.h:49-50`).
 //! - `DecodePayload` (`payload.cpp:364-378`, layout in `payload.h:19-45`): magic `0x59 0x42`
 //!   ("YB", `params.h:43-44`), version `0x03` (`params.h:45`; versions 1, 2 and later are
-//!   non-Yellowback, V23), then the type byte: 0x01 MINT, 0x02 TRANSFER, 0x03 REDEEM,
+//!   non-Yellowback, V23), except a MINT on the post-quantum line (`rpcversion` 7, the workspace's
+//!   `docs/plans/yellowback-quantum-spec.md` §3.1 and ruling C-1): version `0x04`, whose 33 owner
+//!   bytes are `scheme ‖ keyHash` instead of a public key; every other type stays `0x03`. Both
+//!   MINT versions are accepted (display only: chain-viz observes either line, and a node of the
+//!   other line never relays or mines the other version), then the type byte: 0x01 MINT, 0x02 TRANSFER, 0x03 REDEEM,
 //!   0x05 ATTESTOR_REGISTER, 0x06 CLAIM_NOTICE, 0x07 EQUIVOCATION, 0x08 ATTESTOR_REVIVE; any
 //!   other type is non-Yellowback (the forward-compatibility rule). Bodies are fixed-width
 //!   little-endian; a wrong body length is malformed (=> non-Yellowback for the node too).
@@ -30,6 +34,8 @@ use crate::rpc::RawTransaction;
 
 pub const MAGIC: [u8; 2] = [0x59, 0x42];
 pub const VERSION: u8 = 0x03;
+/// The post-quantum line's MINT payload version (quantum spec §3.1, C-1); MINT only.
+pub const MINT_VERSION_PQ: u8 = 0x04;
 pub const MIN_PAYLOAD: usize = 4;
 pub const MAX_PAYLOAD: usize = 80;
 const OP_RETURN: u8 = 0x6a;
@@ -89,6 +95,13 @@ pub struct Payload {
     /// CLAIM_NOTICE: the vault outpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault: Option<String>,
+    /// A v4 MINT: the vault owner's post-quantum scheme (1 SLH-DSA-SHA2-128s, 2 FN-DSA-512; any
+    /// byte decodes, MINT-3 judges) and key hash, hex as the V pushes it (`yed_decodepayload`'s
+    /// `ownerScheme` / `ownerHash`).
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "ownerScheme")]
+    pub owner_scheme: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "ownerHash")]
+    pub owner_hash: Option<String>,
 }
 
 /// `OP_RETURN <one data push>` exactly, else `None` (`ExtractOpReturnData`).
@@ -116,7 +129,10 @@ pub fn op_return_data(script: &[u8]) -> Option<&[u8]> {
 
 /// Decode a payload's bytes (`DecodePayload`); `None` for anything the node calls non-Yellowback.
 pub fn decode(data: &[u8], payload_vout: u32) -> Option<Payload> {
-    if data.len() < MIN_PAYLOAD || data.len() > MAX_PAYLOAD || data[..2] != MAGIC || data[2] != VERSION {
+    if data.len() < MIN_PAYLOAD || data.len() > MAX_PAYLOAD || data[..2] != MAGIC {
+        return None;
+    }
+    if data[2] != VERSION && !(data[2] == MINT_VERSION_PQ && data[3] == 0x01) {
         return None;
     }
     let name = type_name(data[3])?;
@@ -134,14 +150,21 @@ pub fn decode(data: &[u8], payload_vout: u32) -> Option<Payload> {
         attest_fee_vout: None,
         assignments: Vec::new(),
         vault: None,
+        owner_scheme: None,
+        owner_hash: None,
     };
     let u32le = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
     let vout = |b: u8| if b == 0xff { None } else { Some(b) };
     match data[3] {
         0x01 => {
-            // termClass u8, cents u32, lockHeight u32, refHeight u32, ownerPubKey 33, feeVout u8, attestFeeVout u8 (48)
+            // termClass u8, cents u32, lockHeight u32, refHeight u32, owner 33, feeVout u8, attestFeeVout u8 (48);
+            // owner = ownerPubKey (v3) or ownerScheme u8 ‖ ownerHash 32 (v4, payload offsets 17..49)
             if body.len() != 48 {
                 return None;
+            }
+            if data[2] == MINT_VERSION_PQ {
+                p.owner_scheme = Some(body[13]);
+                p.owner_hash = Some(hex::encode(&body[14..46]));
             }
             p.term_class = Some(char::from(b'A' + body[0]).to_string());
             p.cents = Some(u32le(&body[1..5]) as u64);
@@ -278,6 +301,38 @@ mod tests {
         assert_eq!(p.cents, Some(100_000));
         assert_eq!(p.term_class.as_deref(), Some("A"));
         assert_eq!((p.lock_height, p.ref_height, p.fee_vout, p.attest_fee_vout), (Some(380), Some(329), Some(3), Some(4)));
+    }
+
+    /// rpcversion 7 (quantum spec §3.1, C-1): a MINT at version 4 carries scheme ‖ keyHash at
+    /// payload offsets 17..49; feeVout / attestFeeVout do not move; every other type stays at 3.
+    #[test]
+    fn mint_v4_decodes() {
+        let mut d = mint_payload();
+        d[2] = MINT_VERSION_PQ;
+        d[17] = 0x01;
+        for (i, b) in d[18..50].iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        assert_eq!(d.len(), 52);
+        let p = find_payload_in_scripts(&[vec![0x76], vec![0x76], script(&d), vec![0x76], vec![0x76]]).unwrap();
+        assert_eq!((p.tx_type.as_str(), p.version, p.cents), ("mint", 4, Some(100_000)));
+        assert_eq!((p.fee_vout, p.attest_fee_vout), (Some(3), Some(4)));
+        assert_eq!(p.owner_scheme, Some(1));
+        assert_eq!(p.owner_hash.as_deref(), Some("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"));
+        let j = serde_json::to_value(&p).unwrap();
+        assert_eq!((j["ownerScheme"].as_u64(), j["version"].as_u64()), (Some(1), Some(4)));
+        // a v3 MINT (the upgrade/vault line) still decodes, without the PQ owner
+        let v3 = decode(&mint_payload(), 0).unwrap();
+        assert_eq!((v3.version, v3.owner_scheme, v3.owner_hash.as_deref()), (3, None, None));
+        assert!(serde_json::to_value(&v3).unwrap().get("ownerScheme").is_none());
+        // version 4 is MINT-only: a v4 TRANSFER, REDEEM, NOTICE or EQUIVOCATION is non-Yellowback
+        assert!(decode(&[0x59, 0x42, 0x04, 0x02, 1, 1, 0x10, 0x27, 0, 0], 0).is_none());
+        assert!(decode(&[0x59, 0x42, 0x04, 0x07], 0).is_none());
+        assert!(decode(&[0x59, 0x42, 0x03, 0x02, 1, 1, 0x10, 0x27, 0, 0], 0).is_some());
+        // version 5 MINT is non-Yellowback
+        let mut v5 = d.clone();
+        v5[2] = 0x05;
+        assert!(decode(&v5, 0).is_none());
     }
 
     #[test]

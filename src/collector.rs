@@ -233,6 +233,8 @@ impl Collector {
             let mut m = self.model.write().await;
             if m.chain_name.is_empty() {
                 m.chain_name = info.chain.clone();
+                m.revenue.set_chain(&info.chain);
+                m.vault.set_chain(&info.chain);
             }
             st.chain_name = Some(info.chain);
         }
@@ -340,6 +342,9 @@ impl Collector {
                     yellowback.upsert_tx(t.clone());
                 }
                 info.yb = Some(BlockYb { txs, ..Default::default() });
+            }
+            if info.pq_bytes.is_none() {
+                info.pq_bytes = Some(crate::pq::block_pq_bytes(b));
             }
             let ev = m.vault.on_block(b);
             drop(m);

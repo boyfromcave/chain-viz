@@ -501,7 +501,7 @@ pub struct TxOut {
     pub script_pub_key: Value,
 }
 
-// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 6 on upgrade/vault-in-term) ----
+// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 7 on upgrade/quantum-vaults) ----
 
 /// The `rpcversion` whose shapes the typed structs below follow. chain-viz is an observer and
 /// keeps parsing an older node (its typed fields default and it has no `upgrade`); the UI says
@@ -511,7 +511,15 @@ pub struct TxOut {
 /// vault whose claim branch is open, in term too, with `claimable` true or false, and
 /// `yed_getinfo.params` carries `inTermClaims`, `claimThresholdBps` and `earlyRedeemFeeBps`.
 /// A 5 node still parses (its rows lack `claimable` and are all claimable).
-pub const KNOWN_RPC_VERSION: u32 = 6;
+/// 7 is the post-quantum line (`upgrade/quantum-vaults`, the workspace's
+/// `docs/plans/yellowback-quantum-rpc-delta.md`): owners are post-quantum (`ownerScheme`,
+/// `ownerHash`, a 53-character `ownerAddress`; `ownerPubKey` / `ownerKeyId` are gone), a MINT's
+/// payload is version 4, and `yed_getinfo.params.pq` carries the schemes, the Falcon height and the
+/// size-priced fee rate. No typed field here changed, so a 6 node parses the same; the UI models
+/// both ([`MODELLED_RPC_VERSIONS`]) and warns on any other or on a mix.
+pub const KNOWN_RPC_VERSION: u32 = 7;
+/// The versions whose shapes chain-viz models without a warning.
+pub const MODELLED_RPC_VERSIONS: [u32; 2] = [7, 6];
 
 /// `yed_getinfo` at rpcversion 5 (the vault upgrade, upgrade plan §6, §15.10): `enforcing`,
 /// `valveTripped`, `sunset`, `abandoned`, `rejectedBlocks`, `suppressedBlocks`, `activation`
@@ -765,6 +773,12 @@ mod tests {
         let info: YedInfo = serde_json::from_value(v["yed_getinfo"].clone()).unwrap();
         assert_eq!((info.height, info.rpcversion, info.start_height), (331, KNOWN_RPC_VERSION, 103));
         let up = info.upgrade.as_ref().expect("rpcversion 5 carries the upgrade object");
+        // rpcversion 7 (the quantum line): params.pq and the MINT payload version
+        assert_eq!(info.params["pq"]["schemes"], json!([1]));
+        assert_eq!(info.params["pq"]["falconActive"], json!(false));
+        assert!(info.params["pq"]["feeRateZatPerKB"].is_u64());
+        assert_eq!(info.params["attest"]["mintPayloadVersion"], json!(4));
+        assert_eq!(info.params["attest"]["payloadVersion"], json!(3));
         // rpcversion 6 (in-term claims): the new params ride in the untyped `params`
         assert_eq!(info.params["inTermClaims"], json!(true));
         assert_eq!(info.params["claimThresholdBps"], json!(12500));
@@ -816,6 +830,13 @@ mod tests {
         let list: Vec<Value> = serde_json::from_value(v["vault_list"].clone()).unwrap();
         assert!(list.iter().any(|e| e["kind"] == "intent" && e["matureheight"].is_u64() && e["origin"].is_string() && e["cancellable"].is_boolean()));
         assert!(list.iter().any(|e| e["kind"] == "vault" && e["ownerheight"].is_u64() && e["outpoint"].is_string()));
+        // the quantum line: every owner is a pqkeyid of a registered scheme; no EC owner key is left
+        for e in &list {
+            assert!(e.get("ownerkey").is_none(), "{}", e);
+            let (scheme, _) = crate::pq::parse_pqkeyid(e["owner"].as_str().unwrap()).unwrap();
+            assert_eq!(e["ownerscheme"], scheme);
+        }
+        assert_eq!(v["vault_decodescript_vault"]["ownerscheme"], 1);
         assert_eq!(v["vault_decodescript_intent"]["type"], "intent");
         assert_eq!(v["vault_decodescript_vault"]["type"], "vault");
     }

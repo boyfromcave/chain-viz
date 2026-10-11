@@ -16,6 +16,12 @@
 //! listed, or a backfill gap) is inferred from the listing alone: an intent replaced by a vault
 //! with its `origin` script before `matureheight` is a cancel, one gone at or after maturity a
 //! release.
+//!
+//! Owners (the quantum line, `doc/vault-rpc.md` "Owners"): every V and I owner is a post-quantum
+//! key, listed as `owner` (a `pqkeyid`, scheme ‖ keyHash) and `ownerscheme`; the snapshot adds
+//! `owneraddress` (the 53-character PQ Yellowback address of the chain) and `ownerschemename`. A
+//! spend whose scriptSig carries the chunked PQ signature stack (an owner spend) records its
+//! `pqscheme`.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -123,6 +129,8 @@ pub struct VaultModel {
     acts_seen: BTreeSet<String>,
     /// `yed_getinfo.upgrade.attestorSetId` of the leader: the YED attestor set.
     pub attestor_set: Option<String>,
+    /// The PQ Yellowback address version of the chain (quantum spec §4), from its name.
+    owner_version: Option<[u8; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -242,13 +250,17 @@ impl VaultModel {
             if self.spent.contains(&op) {
                 continue;
             }
-            let sel = selector_of(vin.get("scriptSig").and_then(|x| x.get("hex")).and_then(Value::as_str).unwrap_or(""));
+            let sig_hex = vin.get("scriptSig").and_then(|x| x.get("hex")).and_then(Value::as_str).unwrap_or("");
+            let sel = selector_of(sig_hex);
             let kind = s(&entry, "kind").to_string();
             let action = sel.map(|x| action_of(&kind, x)).unwrap_or("spent");
             // A cancel returns the value to the originating vault script; an unlock re-locks the rest in the same V.
             let back_script = if kind == "intent" { s(&entry, "origin").to_string() } else { s(&entry, "script").to_string() };
             let to = tx.vout.iter().find(|o| !back_script.is_empty() && o.script_pub_key.get("hex").and_then(Value::as_str) == Some(back_script.as_str())).map(|o| format!("{}:{}", tx.txid, o.n));
-            let rec = spend_record(&entry, &kind, action, sel, Some(&tx.txid), Some(height), to, false);
+            let mut rec = spend_record(&entry, &kind, action, sel, Some(&tx.txid), Some(height), to, false);
+            if let Some(scheme) = hex::decode(sig_hex).ok().and_then(|b| crate::pq::scriptsig_scheme(&b)) {
+                rec["pqscheme"] = scheme.into();
+            }
             out.push(self.push_spend(&op, rec));
         }
         for o in &tx.vout {
@@ -278,6 +290,21 @@ impl VaultModel {
         Emitted { height: rec.get("height").and_then(Value::as_u64), node: None, kind: EventKind::VaultSpend(rec) }
     }
 
+    /// The chain's name (`getblockchaininfo.chain`): fixes the owner address version.
+    pub fn set_chain(&mut self, chain: &str) {
+        self.owner_version = crate::pq::yed_version(chain);
+    }
+
+    /// `owneraddress` and `ownerschemename` beside a row's `owner` (a pqkeyid).
+    fn with_owner(&self, row: &mut Value) {
+        let Some((scheme, hash)) = row.get("owner").and_then(Value::as_str).and_then(crate::pq::parse_pqkeyid) else { return };
+        let Some(o) = row.as_object_mut() else { return };
+        if let Some(v) = self.owner_version {
+            o.insert("owneraddress".into(), crate::pq::encode(v, scheme, &hash).into());
+        }
+        o.insert("ownerschemename".into(), crate::pq::scheme_name(scheme).into());
+    }
+
     pub fn snapshot(&self) -> VaultSnapshot {
         let next = self.info.as_ref().map(|i| i.height + 1);
         let mut vaults = Vec::new();
@@ -287,6 +314,7 @@ impl VaultModel {
             let t = tags.entry(s(v, "tag").to_string()).or_insert_with(|| (s(v, "tagtext").to_string(), 0, 0, 0));
             t.3 += zat(v);
             let mut row = v.clone();
+            self.with_owner(&mut row);
             if s(v, "kind") == "intent" {
                 t.2 += 1;
                 if let (Some(o), Some(m), Some(n)) = (row.as_object_mut(), u(v, "matureheight"), next) {
@@ -419,6 +447,40 @@ mod tests {
         let ev = m.on_list(24, "d", vec![c1, row("v3:0", "vault", json!({"script": "v3-spk"}))]);
         assert!(matches!(&ev[0].kind, EventKind::VaultSpend(r) if r["action"] == "cancel" && r["returnedTo"] == "v3:0" && r["inferred"] == true));
         assert_eq!(m.snapshot().spends.len(), 3);
+    }
+
+    /// The quantum line: PQ owners get their address and scheme name; a chunked owner spend
+    /// (a 7,939-byte SLH-DSA scriptSig ending in selector 2) is an owner spend with `pqscheme` 1.
+    #[test]
+    fn pq_owner_and_chunked_selector() {
+        use crate::pq::tests::pq_scriptsig;
+        let mut m = VaultModel::default();
+        m.set_chain("regtest");
+        m.on_info(VaultInfo { height: 20, statehash: "a".into(), ..Default::default() });
+        let owner = format!("01{}", "42".repeat(32));
+        let v = row("v1:0", "vault", json!({"owner": owner, "ownerscheme": 1, "ownerheight": 30}));
+        let bad = row("v2:0", "vault", json!({"owner": format!("07{}", "42".repeat(32)), "ownerscheme": 7}));
+        m.on_list(20, "a", vec![v, bad]);
+        let snap = m.snapshot();
+        let r = snap.vaults.iter().find(|x| x["outpoint"] == "v1:0").unwrap();
+        let addr = r["owneraddress"].as_str().unwrap();
+        assert!(addr.starts_with("yr") && addr.len() == 53, "{}", addr);
+        assert_eq!(crate::pq::decode(addr), Some(([0x57, 0x10], 1, [0x42; 32])));
+        assert_eq!(r["ownerschemename"], "SLH-DSA-SHA2-128s");
+        let r2 = snap.vaults.iter().find(|x| x["outpoint"] == "v2:0").unwrap();
+        assert!(r2.get("owneraddress").is_none(), "an unregistered scheme has no address");
+        for (scheme, sel, action) in [(1u8, 0x52u8, "owner"), (2, 0x53, "owner-released")] {
+            let sig = pq_scriptsig(scheme, &[], &[sel]);
+            if scheme == 1 {
+                assert_eq!(sig.len(), 7939);
+            }
+            assert_eq!(selector_of(&hex::encode(&sig)), Some(sel - 0x50));
+            let tx: RawTransaction = serde_json::from_value(json!({"txid": format!("o{}", scheme), "vin": [{"txid": "v1", "vout": 0, "scriptSig": {"hex": hex::encode(&sig)}}], "vout": []})).unwrap();
+            let mut mm = VaultModel::default();
+            mm.on_list(20, "a", vec![row("v1:0", "vault", json!({"owner": owner}))]);
+            let ev = mm.on_tx(&tx, 21);
+            assert!(matches!(&ev[0].kind, EventKind::VaultSpend(r) if r["action"] == action && r["pqscheme"] == scheme), "{:?}", ev);
+        }
     }
 
     #[test]

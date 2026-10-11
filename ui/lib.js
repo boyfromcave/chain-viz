@@ -63,6 +63,12 @@ export const YB_TYPE_SLOT = {
 export const ybSlotKey = (yb) => (yb?.type === 'redeem' && yb?.path === 'claim' ? 'claim' : yb?.type);
 export const slotVar = (slot) => `var(--${slot})`;
 
+// Post-quantum owner schemes (the quantum line, rpcversion 7): yed_getvault.ownerScheme, vault_list ownerscheme.
+export const PQ_SCHEMES = { 1: 'SLH-DSA-SHA2-128s', 2: 'FN-DSA-512' };
+export const pqSchemeShort = (n) => ({ 1: 'SLH-DSA', 2: 'FN-DSA' }[n] || (n === undefined || n === null ? '–' : `scheme ${n}`));
+// A 53-character PQ address shortened for a table cell (the full one goes in the title).
+export const shortAddr = (a) => (a ? (a.length > 20 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a) : '–');
+
 // One shared tooltip. show(html-free text, x, y).
 const tip = () => document.getElementById('tooltip');
 export function tooltip(el, textFn) {
