@@ -1,5 +1,5 @@
 {
- "_source": "ycash-dd upgrade/quantum-vaults (wt/q-dd aa0fd3812) doc/yellowback-rpc-contract.json rpcversion 7, the \"returns\" samples (yed_*); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md), their EC owners rewritten to the quantum line's PQ owner (ownerkey -> owner = 01 || SHA256(01 || old key) as a stand-in key hash, ownerscheme 1; every V/I owner slot 21<key>ac -> 20<hash>51c2, quantum spec §1.1, and each intent's vaulthash recomputed as SHA256 of its rewritten origin; checked with vault_decodescript on wt/q-dd)",
+ "_source": "ycash-dd q/fees (wt/q-fees 430002b16) doc/yellowback-rpc-contract.json rpcversion 8, the \"returns\" samples (yed_*); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md), their EC owners rewritten to the quantum line's PQ owner (ownerkey -> owner = 01 || SHA256(01 || old key) as a stand-in key hash, ownerscheme 1; every V/I owner slot 21<key>ac -> 20<hash>51c2, quantum spec §1.1, and each intent's vaulthash recomputed as SHA256 of its rewritten origin; checked with vault_decodescript on wt/q-dd)",
  "set_getinfo": {
   "active": 1,
   "admitkey": "02c3ac780b7c19de91e8a70b6c80a168fc7cd32b326aef9c677f5c98157e78fb7d",
@@ -306,6 +306,7 @@
   "mintRequiresArmed": false,
   "network": "regtest",
   "params": {
+   "addressVersion": "2002",
    "attest": {
     "ageCap": 64,
     "armDelay": 8,
@@ -357,12 +358,56 @@
     250,
     100
    ],
-   "feeBps": 25,
-   "feeMinZat": 50000000,
    "feeZat": 1000,
+   "fees": {
+    "earlyRedeemFeeBps": [
+     500,
+     250,
+     100
+    ],
+    "network": {
+     "fallbackZatPerKB": 100,
+     "flatZat": 1000,
+     "floorZatPerKB": 5000,
+     "maxTxFeeZat": 10000000,
+     "plain": {
+      "usdPerKBMicro": 20000,
+      "zatPerKB": 5000000
+     },
+     "priceMicroUsd": 400000,
+     "priceSource": "tip",
+     "yellowback": {
+      "maxTxFeeCeilingZat": 1000000000,
+      "maxTxFeeUsdMicro": 2000000,
+      "maxTxFeeZat": 1000000000,
+      "usdPerKBMicro": 50000,
+      "zatPerKB": 12500000
+     }
+    },
+    "protocol": {
+     "attestFeeBps": 5000,
+     "bands": [
+      {
+       "bps": 100,
+       "uptoCents": 100000
+      },
+      {
+       "bps": 50,
+       "uptoCents": 1000000
+      },
+      {
+       "bps": 10,
+       "uptoCents": null
+      }
+     ],
+     "floorCents": 100,
+     "priceSource": "pMint"
+    }
+   },
    "globalRatioHaltBps": 25000,
    "grace": 24,
    "inTermClaims": true,
+   "maxMintCents": 10000000,
    "minFill": {
     "fast": 4,
     "mid": 16,
@@ -380,16 +425,27 @@
     "falconActive": false,
     "falconHeight": -1,
     "feeRateZatPerKB": 100,
+    "plainAddressVersion": "4c51",
     "schemes": [
      1
     ]
    },
+   "pqAddressVersion": "5710",
    "recapRatioBps": 50000,
    "refLag": 2,
    "refWindow": 40,
    "sigmaMultMaxBps": 10000,
    "sigmaRefBps": 0,
    "startHeight": 103,
+   "supplyCap": {
+    "capCents": 33333330,
+    "circulatingZat": 1234567800000000,
+    "issuedBeforeStartZat": 625000000000,
+    "maxVaultCents": null,
+    "maxVaultShareBps": 1000,
+    "priceMicroUsd": 400000,
+    "vaultShareFloorCents": 1000000
+   },
    "supplyCapBps": 0,
    "tokenValueZat": 10000,
    "windows": {
@@ -400,7 +456,7 @@
   },
   "protectedByIndex": true,
   "rebuilt": false,
-  "rpcversion": 7,
+  "rpcversion": 8,
   "startHeight": 103,
   "supplyCapReached": false,
   "unhealthyReason": "",
@@ -448,13 +504,14 @@
    "claimable": true,
    "collateralZat": 251889169000,
    "emergencyOpenAt": null,
-   "feeZat": 629722922,
+   "feeZat": 50377833753,
    "lockHeight": 377,
    "mintedCents": 100000,
    "noticeHeight": null,
    "noticed": false,
-   "ownerAddress": "yrExampleOwnerAddress111111111111111",
+   "ownerAddress": "yb5u8LCGfU3hYYhhAqvYzR3ZQuNFEUWzx5dmLiGjPW8Gqto3xqqCc",
    "pClaim": 400000,
+   "pMint": 1985000,
    "residualZat": 0,
    "underwaterAt": 436700,
    "vault": "6a1f2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8:0"

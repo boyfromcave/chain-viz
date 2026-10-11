@@ -22,8 +22,8 @@ name: ci
 on:
   push:
     # The one branch list: harden/yellowback (P1 hardening), upgrade/vault (the network upgrade),
-    # upgrade/vault-in-term (in-term claims, rpcversion 6), upgrade/quantum-vaults (post-quantum owners,
-    # rpcversion 7), main (the branch of record, AGENTS.md rule 2).
+    # upgrade/vault-in-term (in-term claims, rpcversion 6), upgrade/quantum-vaults (post-quantum owners and the fee structure,
+    # rpcversion 8), main (the branch of record, AGENTS.md rule 2).
     branches: &branches [main, harden/yellowback, upgrade/vault, upgrade/vault-in-term, upgrade/quantum-vaults]
   pull_request:
     branches: *branches
@@ -118,7 +118,7 @@ jobs:
   # `node-bin`, ycash-dd's node-bin.tar with src/ycashd and src/ycash-cli executable; 3 days).
   # Node branch: upgrade/vault -> upgrade/vault (whose
   # devnet tool activates the Vault upgrade itself), upgrade/vault-in-term -> upgrade/vault-in-term
-  # (the in-term node, rpcversion 6), upgrade/quantum-vaults -> upgrade/quantum-vaults (rpcversion 7),
+  # (the in-term node, rpcversion 6), upgrade/quantum-vaults -> upgrade/quantum-vaults (rpcversion 8),
   # harden/yellowback -> harden/yellowback,
   # anything else -> ycash-dd's branch of record. The devnet tool lives in the node tree and needs
   # its Python test framework, so the tree is checked out whole beside chain-viz, the workspace

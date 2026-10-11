@@ -457,12 +457,17 @@ impl Collector {
         self.counterfactual(client).await
     }
 
-    /// C4: `yed_getfeepayee R collat` once per refHeight the ledger's fee rows name, for |E(R)|
-    /// (the counterfactual's denominator). A refusal (FEE-0, out of range) is remembered as
-    /// "no eligible payee" rather than asked again.
+    /// C4: `yed_getfeepayee R` (`R collat` before rpcversion 8) once per refHeight the ledger's fee
+    /// rows name, for |E(R)| (the counterfactual's denominator). A refusal (FEE-0, out of range) is
+    /// remembered as "no eligible payee" rather than asked again.
     async fn counterfactual(&self, client: &RpcClient) -> Result<(), RpcError> {
         for _ in 0..8 {
-            let Some((r, collat)) = self.model.read().await.revenue.next_ref() else { return Ok(()) };
+            let (next, version) = {
+                let m = self.model.read().await;
+                (m.revenue.next_ref(), m.yed_info.get(client.id()).map(|i| i.rpcversion).unwrap_or(crate::rpc::KNOWN_RPC_VERSION))
+            };
+            let Some((r, collat)) = next else { return Ok(()) };
+            let collat = (version < crate::rpc::FEEPAYEE_NO_COLLATERAL_FROM).then_some(collat);
             let n = match client.yed_getfeepayee(r, collat).await {
                 Ok(v) => Some(v.get("eligible").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)),
                 Err(RpcError::Node { message, .. }) => {

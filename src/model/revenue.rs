@@ -143,7 +143,7 @@ pub struct RevenueModel {
     subsidy: BTreeMap<u64, (i64, i64, Option<String>)>,
     /// |E(R)| per refHeight (`None`: the node said FEE-0 / out of range).
     eligible: BTreeMap<u64, Option<usize>>,
-    /// refHeights to ask, with the collateral to pass.
+    /// refHeights to ask, with the collateral to pass to a node before rpcversion 8 (none from 8).
     pending_ref: BTreeMap<u64, i64>,
     /// coinbase address → the tag's payoutAddress seen on the same block.
     aliases: BTreeMap<String, String>,
@@ -442,7 +442,7 @@ impl RevenueModel {
         self.last_height = Some(self.last_height.map_or(height, |l| l.max(height)));
     }
 
-    /// The next `yed_getfeepayee refHeight collateralZat` to ask, if any.
+    /// The next `yed_getfeepayee refHeight [collateralZat]` to ask, if any (the collateral only below rpcversion 8).
     pub fn next_ref(&self) -> Option<(u64, i64)> {
         self.pending_ref.iter().next().map(|(r, c)| (*r, *c))
     }

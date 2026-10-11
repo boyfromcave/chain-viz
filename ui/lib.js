@@ -67,6 +67,25 @@ export const slotVar = (slot) => `var(--${slot})`;
 export const PQ_SCHEMES = { 1: 'SLH-DSA-SHA2-128s', 2: 'FN-DSA-512' };
 export const pqSchemeShort = (n) => ({ 1: 'SLH-DSA', 2: 'FN-DSA' }[n] || (n === undefined || n === null ? '–' : `scheme ${n}`));
 // A 53-character PQ address shortened for a table cell (the full one goes in the title).
+// The fee structure (rpcversion 8, yed_getinfo.params.fees / maxMintCents / supplyCap; ycash-dd
+// doc/yellowback-rpc.md "The fee structure"): the protocol fee is dollars of the debt by band (like tax
+// brackets) at the vault's stored pMint, the network fee dollars per KB at the attested tip price. Pure
+// text, null on a node before rpcversion 8 (no params.fees).
+const dollars = (cents) => `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+export function feeParamsText(p) {
+  const f = p?.fees; if (!f) return null;
+  const pr = f.protocol || {}, net = f.network || {};
+  const bands = (pr.bands || []).map((b, i, a) => `${b.bps / 100} % ${b.uptoCents === null || b.uptoCents === undefined ? `above ${a[i - 1] ? dollars(a[i - 1].uptoCents) : '$0'}` : `to ${dollars(b.uptoCents)}`}`).join(' · ');
+  const protocol = `protocol ${bands || '–'}, floor ${pr.floorCents === undefined ? '–' : dollars(pr.floorCents)} at ${pr.priceSource || 'pMint'}, attestor share ${pr.attestFeeBps === undefined ? '–' : pr.attestFeeBps / 100 + ' %'}`;
+  const usdKB = (m) => (m === undefined || m === null ? '–' : `$${(m / 1e6).toFixed(2)}`);
+  const at = net.priceMicroUsd ? `at $${(net.priceMicroUsd / 1e6).toFixed(4)}` : `no price: fallback ${net.fallbackZatPerKB ?? '–'} zat/KB`;
+  const yb = net.yellowback || {}, plain = net.plain || {};
+  const cap = yb.maxTxFeeZat === undefined ? '–' : `${(yb.maxTxFeeZat / 1e8).toLocaleString('en-US', { maximumFractionDigits: 8 })} YEC`;
+  const network = `network plain ${usdKB(plain.usdPerKBMicro)}/KB (${plain.zatPerKB ?? '–'} zat/KB), vault/YED ${usdKB(yb.usdPerKBMicro)}/KB (${yb.zatPerKB ?? '–'} zat/KB) ${at}, floor ${net.floorZatPerKB ?? '–'} zat/KB, cap ${cap}`;
+  const sc = p.supplyCap || {};
+  const supply = `max mint ${p.maxMintCents === undefined ? '–' : dollars(p.maxMintCents)} · supply cap ${sc.capCents === null || sc.capCents === undefined ? '–' : dollars(sc.capCents)} (circulating ${sc.circulatingZat === undefined ? '–' : (sc.circulatingZat / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' YEC'}) · one vault ≤ ${sc.maxVaultCents === null || sc.maxVaultCents === undefined ? `max(${(sc.maxVaultShareBps ?? 0) / 100} % of the cap, ${sc.vaultShareFloorCents === undefined ? '–' : dollars(sc.vaultShareFloorCents)})` : dollars(sc.maxVaultCents)}`;
+  return { protocol, network, supply, early: (f.earlyRedeemFeeBps || []).map((b, i) => `${'ABC'[i] || i} ${b / 100} %`).join(' / ') };
+}
 export const shortAddr = (a) => (a ? (a.length > 20 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a) : '–');
 
 // One shared tooltip. show(html-free text, x, y).

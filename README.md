@@ -241,7 +241,7 @@ fees, median age, transactions older than 2 blocks (a pool filtering it, or a fe
 policy), *partial* = present on some nodes but not all (propagation, or a stock node refusing
 what it does not understand).
 
-**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 6 or 7 or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C, the claim delay), the vault
+**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 6, 7 or 8 or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the fee structure (`params.fees`: the protocol fee bands of the debt at `pMint` with the floor and attestor share, the network $/KB rates at the attested tip price with the floor and cap; `params.maxMintCents`; `params.supplyCap` with the per-vault share; rpcversion 8), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C — of the debt at `pMint` from rpcversion 8, of the collateral before — the claim delay), the vault
 upgrade from `yed_getinfo.upgrade` (status, branch ID, activation height, claim delay, the YED
 attestor set), arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
 `UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
@@ -426,8 +426,14 @@ YecWallet or the CLI.
 
 ## rpcversion
 
-chain-viz models `yed_*` at **rpcversion 7** on this branch (`upgrade/quantum-vaults`, the post-quantum line;
-`KNOWN_RPC_VERSION` in `src/rpc.rs`) and at 6 (`MODELLED_RPC_VERSIONS`). rpcversion 7 (the workspace's
+chain-viz models `yed_*` at **rpcversion 8** on this branch (`upgrade/quantum-vaults`, the post-quantum line with
+the fee structure; `KNOWN_RPC_VERSION` in `src/rpc.rs`) and at 7 and 6 (`MODELLED_RPC_VERSIONS`). rpcversion 8 (the
+workspace's `docs/plans/yellowback-quantum-fees-spec.md`; ycash-dd `doc/yellowback-rpc.md`, "The fee structure"):
+the pool fee is a protocol fee in dollars of the debt by band at the vault's stored `pMint` (`params.fees.protocol`),
+network fees are dollars per KB at the attested tip price (`params.fees.network`), `params.maxMintCents` and
+`params.supplyCap` are new and every vault row carries `pMint` (the health panel's vault table and scatter show it);
+`params.feeMinZat` / `params.feeBps` are gone, and `yed_getfeepayee` takes no `collateralZat` (the collector passes
+it only to a node below 8, `feepayee_args`). rpcversion 7 (the workspace's
 `docs/plans/yellowback-quantum-rpc-delta.md`): every vault owner is a post-quantum key (`ownerScheme`, `ownerHash`
 and a 53-character `ownerAddress`; `ownerPubKey` / `ownerKeyId` are gone), a MINT's payload is version 4 (owner =
 scheme ‖ key hash at payload offsets 17..49; every other type stays version 3, and `src/classify.rs` accepts a MINT
