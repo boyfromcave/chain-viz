@@ -109,13 +109,23 @@ function renderSets(d) {
   for (const s of d.sets || []) {
     if (!s.memberlist) continue;
     const mt = h('table', { class: 'table vp-memberlist' });
-    mt.append(h('tr', {}, ...['member key', 'status', 'current', 'live', 'joined', 'last act', 'bond YEC', 'bond locktime', 'frozen'].map((c) => h('th', {}, c))));
+    mt.append(h('tr', {}, ...['member key', 'status', 'current', 'live', 'joined', 'last act', 'bond YEC', 'bond locktime', 'frozen', 'bond exit'].map((c) => h('th', {}, c))));
     for (const x of s.memberlist) mt.append(h('tr', {},
       h('td', { class: 'mono' }, x.key.slice(0, 12) + '…'), h('td', {}, h('span', { class: 'vp-state', 'data-s': x.status }, x.status)),
       h('td', {}, x.current ? 'yes' : 'no'), h('td', {}, h('span', { class: 'vp-state', 'data-s': x.live ? 'live' : 'DORMANT' }, x.live ? 'live' : 'dormant')),
-      h('td', {}, String(x.joinheight)), h('td', {}, String(x.lastact)), h('td', {}, yec(x.bondvalue)), h('td', {}, String(x.bondlocktime)), h('td', {}, x.bondfrozen ? h('b', { class: 'vp-bad' }, 'FROZEN') : 'no')));
+      h('td', {}, String(x.joinheight)), h('td', {}, String(x.lastact)), h('td', {}, yec(x.bondvalue)), h('td', {}, String(x.bondlocktime)), h('td', {}, x.bondfrozen ? h('b', { class: 'vp-bad' }, 'FROZEN') : 'no'), memberExit(s, x)));
     m.append(h('details', { open: s.yed || (d.sets || []).length <= 2 }, h('summary', {}, `members of ${id8(s.setid)}`, s.yed ? ' (YED attestors)' : '', ` — ${s.memberlist.length}`), mt));
   }
+}
+
+// The bond exit delay (owner 2026-10-11, doc/vault-rpc.md set_leave): a member that left without a freeze
+// (its own SET_REMOVE, a removal without burn, or the module's displacement) is REMOVED and its bond is
+// spendable from exitHeight + the set's maturity, still slashable until then. set_getinfo's memberlist reports
+// no exitHeight (only set_leave's result does), so the unlock height is shown as that bound, not a number.
+function memberExit(s, x) {
+  if (x.status !== 'removed' || x.bondfrozen) return h('td', { class: 'muted' }, '–');
+  return h('td', { title: `left the set without a freeze: the bond is spendable from the exit height + maturity ${s.maturity} (and not before bondlocktime ${x.bondlocktime}); set_getinfo does not report the exit height, so it may already be spendable or spent` },
+    `exit + ${s.maturity}`);
 }
 
 function renderTags(d) {

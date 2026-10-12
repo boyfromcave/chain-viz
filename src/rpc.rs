@@ -822,6 +822,24 @@ mod tests {
         assert!(crate::model::yellowback::is_claimable_row(&rows[0]));
         assert_eq!(rows[0]["underwaterAt"], json!(436700));
         assert!(rows[0]["pMint"].is_i64(), "rpcversion 8: every vault row carries pMint");
+        // rpcversion 8, the attestor rules (owner 2026-10-11, D-Q-30, no bump): the bond minimum is computed
+        // from vault collateral between a floor and a cap, the set has seats ranked by seat weight, the
+        // bond exit delay is BOND_MATURITY after statusHeight (BOND_MIN_LOCK 0); never bondMinUsdCents
+        let att = &info.params["attest"];
+        for k in ["bondMinZat", "bondMinFloorZat", "bondMinCapZat", "bondShareBps", "bondMaturity", "seats", "seatAgeUnit", "seatAgeCap", "seatMarginBps", "evictMarginBps"] {
+            assert!(att[k].is_i64(), "params.attest.{}", k);
+        }
+        assert!(att["bondMinFloorZat"].as_i64() <= att["bondMinZat"].as_i64() && att["bondMinZat"].as_i64() <= att["bondMinCapZat"].as_i64());
+        assert_eq!(att["bondMinLock"], json!(0));
+        for never in ["bondMinUsdCents", "bondMinNoPriceZat"] {
+            assert!(att.get(never).is_none(), "{} never shipped", never);
+        }
+        let attestors: Vec<Value> = serde_json::from_value(v["yed_listattestors"].clone()).unwrap();
+        assert_eq!(attestors.len(), 1);
+        assert_eq!(attestors[0]["evicted"], json!(false));
+        // seatWeight is a decimal string in Q16 (zat × 65,536)
+        let sw: u128 = attestors[0]["seatWeight"].as_str().unwrap().parse().unwrap();
+        assert!(sw >> 16 >= attestors[0]["bondZat"].as_u64().unwrap() as u128, "the tenure factor is at least 1.0");
         assert_eq!((up.name.as_str(), up.branch_id.as_str(), up.status.as_str(), up.activation_height, up.claim_delay), ("Vault", "6d5b7a31", "active", 103, 10));
         assert_eq!(up.attestor_set_id, info.params["attestorSetId"].as_str().unwrap());
         for gone in ["enforcing", "valveTripped", "sunset", "abandoned", "rejectedBlocks", "suppressedBlocks", "activation", "templatePolicy"] {

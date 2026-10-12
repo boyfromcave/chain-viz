@@ -255,7 +255,10 @@ collateral tiles with the global ratio against the node's claim threshold θ and
 `claimHeight` otherwise; vaults claimable now ringed) and a vault table (ratio, the claimable-at price
 `underwaterAt`, and `CLAIMABLE now` or `listed, above θ` for a `yed_listclaimable` row with `claimable: false`,
 and on rpcversion 7 the owner: its post-quantum scheme and 53-character `ownerAddress`, a vault identifier, never a YED receive address);
-the attestor table; state-hash
+the attestor table (on rpcversion 8 with the attestor rules: the seat weight `seatWeight` ÷ 65,536 in YEC, an
+`evicted` mark on a WITHDRAWN record evicted from the full set, and the bond exit: a WITHDRAWN record whose bond is
+not frozen or spent unlocks at `statusHeight + bondMaturity`, not before its `bondLocktime`), with the ribbon's
+`attestors` state (the computed `bondMinZat` against its floor and cap, the seats and margins, the exit delay); state-hash
 agreement per node and the refused blocks with their verdicts; the Yellowback
 transaction table (a refused mint's verdict, e.g. `mint-halted-unarmed`, carries an explanation
 on hover; `claim_release`, `claim_cancel` and `set_act` rows are the claim intent's two ends and
@@ -267,7 +270,8 @@ ID, sets, vaults, intents, locked YEC, state hash); the signer sets (`set_list`,
 `set_getinfo` for the members of up to 16 sets) with seats, thresholds, open/admitted,
 current/active members, `dormant`/`released`, wind-down, and the rate epoch as a bar
 (unlocked this epoch against `epochbasis × ratelimitbps`); each set's member table (status,
-current, live, last act, bond, frozen); the YED attestor set starred; vaults and intents by
+current, live, last act, bond, frozen, and for a member that left unfrozen the bond exit `exit + maturity`:
+`set_getinfo` reports no exit height, so no number is shown); the YED attestor set starred; vaults and intents by
 application tag; pending intents with blocks to release and whether a cancel can still land;
 the spends of every V and I output in the blocks chain-viz fetched, from the spending input's
 selector (V: unlock / owner / owner-released / app; I: release / **cancel** / owner-released),
