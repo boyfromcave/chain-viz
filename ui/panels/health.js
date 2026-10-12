@@ -7,7 +7,7 @@
 // renders with plain SVG. Follows the panel contract of app.js: `init(store)`, `render(ctx)`.
 // Field names are the node's (doc/yellowback-rpc-contract.json): pFast/pMid/pSlow/pMint/pClaim
 // in micro-USD, supplyCents, collateralZat, globalRatioBps, haltMask, claimHeight, …
-import { h, svg, clear, fmtInt, tooltip, pqSchemeShort, shortAddr, PQ_SCHEMES } from '../lib.js';
+import { h, svg, clear, fmtInt, tooltip, pqSchemeShort, shortAddr, PQ_SCHEMES, feeParamsText } from '../lib.js';
 
 const $ = (id) => document.getElementById(id);
 const usd = (micro) => (micro === null || micro === undefined ? '–' : `$${(micro / 1e6).toFixed(4)}`);
@@ -18,8 +18,10 @@ const pct = (bps) => (bps === null || bps === undefined ? '–' : `${(bps / 100)
 // in-term claims line, upgrade/vault-in-term): θ 125 %, inTermClaims true, earlyRedeemFeeBps per class
 // A/B/C; an rpcversion-5 node has no inTermClaims and the upgrade line's 110 %. rpcversion 7 (the
 // post-quantum line, upgrade/quantum-vaults): PQ owners (ownerScheme / ownerHash / a 53-character ownerAddress),
-// params.pq, a version-4 MINT payload; 6 and 7 are both modelled, any other version or a mix of them warns.
-const KNOWN_RPCVERSIONS = [7, 6];
+// params.pq, a version-4 MINT payload. rpcversion 8 (the fee structure): params.fees (protocol fee bands of the
+// debt at pMint, network $/KB at the tip price), maxMintCents, supplyCap, pMint on every vault row; feeMinZat /
+// feeBps gone. 8, 7 and 6 are modelled, any other version or a mix of them warns.
+const KNOWN_RPCVERSIONS = [8, 7, 6];
 function thresholds(info) {
   const p = info?.params || {};
   return { theta: p.claimThresholdBps ?? 11000, emerg: p.attest?.emergencyRatioBps ?? 10500, inTerm: p.inTermClaims === true, fees: p.earlyRedeemFeeBps || [], claimDelay: p.claimDelay };
@@ -115,6 +117,7 @@ function renderRibbon(y, info, stats, d) {
     h('span', { class: 'yb-state' }, h('b', {}, 'upgrade'), up ? ` ${up.name} ${(up.status || '?').toUpperCase()} ` : ' – ', h('span', { class: 'muted' }, up ? `branch ${up.branchId} · from ${up.activationHeight} · claim delay ${up.claimDelay} · attestor set ${(up.attestorSetId || '–').slice(0, 10)}…` : 'no upgrade object (a node before rpcversion 5)')),
     claimsState(info),
     pqState(info),
+    feesState(info),
     h('span', { class: 'yb-state' }, h('b', {}, 'arming'), ` ${att.status || '?'} `, h('span', { class: 'muted' }, `${att.seatedCount ?? '–'} seated · pool ${att.poolSize ?? '–'} (fresh ${att.poolFresh ?? '–'}) · trigger ${att.triggerHeight ?? '–'} · arm ${att.armHeight ?? '–'}`)),
     h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, mintingWhy(info, stats))),
     noPriceState(y.noPrice),
@@ -135,13 +138,22 @@ function pqState(info) {
     h('b', {}, 'post-quantum'), ` ${schemes} `, h('span', { class: 'muted' }, `${falcon} · fee ${pq.feeRateZatPerKB ?? '–'} zat/KB`));
 }
 
+// rpcversion 8: the fee structure and the mint limits (yed_getinfo.params.fees, maxMintCents, supplyCap).
+function feesState(info) {
+  const t = feeParamsText(info?.params); if (!t) return null;
+  return h('span', { class: 'yb-state', title: `yed_getinfo.params.fees / maxMintCents / supplyCap (rpcversion 8)\n${t.protocol}\nearly-redeem ${t.early} of the debt at pMint\n${t.network}\n${t.supply}` },
+    h('b', {}, 'fees'), ` ${t.protocol} `, h('span', { class: 'muted' }, `· ${t.network} · ${t.supply}`));
+}
+
 // The claim rule's parameters (rpcversion 6, in-term IT-7 / IT-9): whether a claim is valid in term, θ, the
 // early-redeem fee per class and the claim delay.
 function claimsState(info) {
   const t = thresholds(info);
   const fees = t.fees.length ? t.fees.map((b, i) => `${'ABC'[i] || i} ${b / 100} %`).join(' / ') : '–';
+  // rpcversion 8 (IT-9'): the early-redeem fee is of the debt at the vault's pMint, before it of the collateral
+  const base = info?.params?.fees ? 'of the debt' : 'of the collateral';
   return h('span', { class: 'yb-state', title: 'yed_getinfo.params: inTermClaims, claimThresholdBps, earlyRedeemFeeBps, claimDelay' }, h('b', {}, 'claims'), t.inTerm ? ' IN TERM ' : ' after term ',
-    h('span', { class: 'muted' }, `θ ${pct(t.theta)} · early-redeem fee ${fees} · claim delay ${t.claimDelay ?? '–'}`));
+    h('span', { class: 'muted' }, `θ ${pct(t.theta)} · early-redeem fee ${fees} ${t.fees.length ? base : ''} · claim delay ${t.claimDelay ?? '–'}`));
 }
 
 // Why minting is halted, or which classes are open. An unarmed halt (H-1) sets no halt-mask bit:
@@ -334,7 +346,7 @@ function renderVaults(y, stats, d) {
   for (const p of vs) {
     const isC = claimable.has(p.key), under = p.ratio < t.theta;
     const dot = svg('circle', { cx: x(p.toClaim), cy: yy(p.ratio), r: isC ? 7 : 5, fill: cls[p.v.termClass] || 'var(--s6)', 'fill-opacity': 0.85, stroke: isC ? 'var(--critical)' : under ? 'var(--serious)' : 'var(--surface)', 'stroke-width': isC ? 3 : 2 });
-    tooltip(dot, () => `vault ${p.key.slice(0, 16)}…  class ${p.v.termClass}\nratio ${pct(p.ratio)} at pClaim ${usd(pClaim)}  (claimable at ${usd(p.v.underwaterAt)}, θ ${pct(t.theta)})\nminted ${yed(p.v.mintedCents)} YED  collateral ${yec(p.v.collateralZat)} YEC\nmint ${p.v.mintHeight} → lock ${p.v.lockHeight} → claim ${p.v.claimHeight} (${p.toClaim} blocks to ${xField})${p.v.noticed ? '\nNOTICED at ' + p.v.noticeHeight : ''}${isC ? '\nCLAIMABLE now' : listedSet.has(p.key) ? '\nlisted, not claimable (above θ)' : ''}`);
+    tooltip(dot, () => `vault ${p.key.slice(0, 16)}…  class ${p.v.termClass}\nratio ${pct(p.ratio)} at pClaim ${usd(pClaim)}  (claimable at ${usd(p.v.underwaterAt)}, θ ${pct(t.theta)})\nminted ${yed(p.v.mintedCents)} YED  collateral ${yec(p.v.collateralZat)} YEC${p.v.pMint ? '  pMint ' + usd(p.v.pMint) : ''}\nmint ${p.v.mintHeight} → lock ${p.v.lockHeight} → claim ${p.v.claimHeight} (${p.toClaim} blocks to ${xField})${p.v.noticed ? '\nNOTICED at ' + p.v.noticeHeight : ''}${isC ? '\nCLAIMABLE now' : listedSet.has(p.key) ? '\nlisted, not claimable (above θ)' : ''}`);
     el.append(dot);
   }
   const lg = clear($('yb-vault-legend'));
@@ -346,14 +358,15 @@ function renderVaults(y, stats, d) {
 // its claim state; a listed row of yed_listclaimable with claimable false is "listed" (in term, above θ).
 function renderVaultTable(vs, claimable, listedSet, rows, t) {
   const tb = clear($('yb-vault-table')); if (!tb) return;
-  tb.append(h('tr', {}, ...['vault', 'class', 'ratio', 'claimable at', 'lock', 'claim', 'owner'].map((c) => h('th', {}, c))));
+  // rpcversion 8: pMint, the vault's stored mint price every fee of it is struck at (FEE-1', RED-3', IT-9')
+  tb.append(h('tr', {}, ...['vault', 'class', 'ratio', 'mint price', 'claimable at', 'lock', 'claim', 'owner'].map((c) => h('th', {}, c))));
   const byKey = new Map(rows.map((c) => [c.vault, c]));
   for (const p of [...vs].sort((a, b) => a.ratio - b.ratio)) {
     const row = byKey.get(p.key), state = claimable.has(p.key) ? 'CLAIMABLE now' : listedSet.has(p.key) ? 'listed, above θ' : '–';
     tb.append(h('tr', { 'data-bad': claimable.has(p.key) ? '1' : '0' }, h('td', {}, h('code', {}, `${p.key.slice(0, 10)}…`)), h('td', {}, p.v.termClass || '–'), h('td', {}, pct(p.ratio)),
-      h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state), ownerCell(p.v)));
+      h('td', { title: 'pMint: the price this vault was minted at (rpcversion 8)' }, usd(row?.pMint ?? p.v.pMint)), h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state), ownerCell(p.v)));
   }
-  if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'no active vaults')));
+  if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 8, class: 'muted' }, 'no active vaults')));
 }
 
 // The vault owner (rpcversion 7): its post-quantum scheme and PQ address, a vault identifier and never a YED

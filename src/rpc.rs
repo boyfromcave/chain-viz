@@ -328,9 +328,12 @@ impl RpcClient {
     pub async fn yed_validaterawtransaction(&self, hex: &str) -> Result<Value, RpcError> {
         self.call("yed_validaterawtransaction", json!([hex])).await
     }
-    /// `yed_getfeepayee refHeight collateralZat`: E(R), the FEE-1 fee and the default payee (C4).
-    pub async fn yed_getfeepayee(&self, ref_height: u64, collateral_zat: i64) -> Result<Value, RpcError> {
-        self.call("yed_getfeepayee", json!([ref_height, collateral_zat])).await
+    /// `yed_getfeepayee refHeight`: E(R) and the default payee (C4). rpcversion 8 dropped the
+    /// `collateralZat` argument (and the `feeZat` field: the fee is a dollar amount of the debt at
+    /// the vault's `pMint`); an older node still takes it, so `collateral_zat` is passed only when
+    /// given ([`feepayee_args`]).
+    pub async fn yed_getfeepayee(&self, ref_height: u64, collateral_zat: Option<i64>) -> Result<Value, RpcError> {
+        self.call("yed_getfeepayee", feepayee_args(ref_height, collateral_zat)).await
     }
     // ---- the vault primitive's read RPCs (upgrade plan §15.8, ycash-dd doc/vault-rpc.md). No
     // wallet needed; the act / vault-spend RPCs of the same doc are never called (readonly_gate).
@@ -515,11 +518,30 @@ pub struct TxOut {
 /// `docs/plans/yellowback-quantum-rpc-delta.md`): owners are post-quantum (`ownerScheme`,
 /// `ownerHash`, a 53-character `ownerAddress`; `ownerPubKey` / `ownerKeyId` are gone), a MINT's
 /// payload is version 4, and `yed_getinfo.params.pq` carries the schemes, the Falcon height and the
-/// size-priced fee rate. No typed field here changed, so a 6 node parses the same; the UI models
-/// both ([`MODELLED_RPC_VERSIONS`]) and warns on any other or on a mix.
-pub const KNOWN_RPC_VERSION: u32 = 7;
+/// size-priced fee rate. No typed field here changed, so a 6 node parses the same.
+/// 8 is the fee structure (the workspace's `docs/plans/yellowback-quantum-fees-spec.md`, ycash-dd
+/// `doc/yellowback-rpc.md` "The fee structure"): the protocol fee is dollars of the debt by band at
+/// the vault's stored `pMint` (`params.fees.protocol`), network fees are dollars per KB at the
+/// attested tip price (`params.fees.network`), `params.maxMintCents` and `params.supplyCap` are new,
+/// every vault row carries `pMint`; `params.feeMinZat` / `params.feeBps` are gone and
+/// `yed_getfeepayee` lost its `collateralZat` argument ([`feepayee_args`]). No typed field here
+/// changed (the new params ride in the untyped `params`); the UI models 8, 7 and 6
+/// ([`MODELLED_RPC_VERSIONS`]) and warns on any other or on a mix.
+pub const KNOWN_RPC_VERSION: u32 = 8;
 /// The versions whose shapes chain-viz models without a warning.
-pub const MODELLED_RPC_VERSIONS: [u32; 2] = [7, 6];
+pub const MODELLED_RPC_VERSIONS: [u32; 3] = [8, 7, 6];
+
+/// The first `rpcversion` whose `yed_getfeepayee` takes no `collateralZat`.
+pub const FEEPAYEE_NO_COLLATERAL_FROM: u32 = 8;
+
+/// `yed_getfeepayee`'s positional arguments: `[refHeight]` on rpcversion 8 and later (`None`),
+/// `[refHeight, collateralZat]` before it.
+pub fn feepayee_args(ref_height: u64, collateral_zat: Option<i64>) -> Value {
+    match collateral_zat {
+        Some(c) => json!([ref_height, c]),
+        None => json!([ref_height]),
+    }
+}
 
 /// `yed_getinfo` at rpcversion 5 (the vault upgrade, upgrade plan §6, §15.10): `enforcing`,
 /// `valveTripped`, `sunset`, `abandoned`, `rejectedBlocks`, `suppressedBlocks`, `activation`
@@ -773,6 +795,18 @@ mod tests {
         let info: YedInfo = serde_json::from_value(v["yed_getinfo"].clone()).unwrap();
         assert_eq!((info.height, info.rpcversion, info.start_height), (331, KNOWN_RPC_VERSION, 103));
         let up = info.upgrade.as_ref().expect("rpcversion 5 carries the upgrade object");
+        // rpcversion 8 (the fee structure): params.fees / maxMintCents / supplyCap, feeMinZat and feeBps gone
+        for gone in ["feeMinZat", "feeBps"] {
+            assert!(info.params.get(gone).is_none(), "rpcversion 8 has no params.{}", gone);
+        }
+        assert_eq!(info.params["maxMintCents"], json!(10_000_000));
+        assert_eq!(info.params["fees"]["protocol"]["bands"].as_array().map(Vec::len), Some(3));
+        assert_eq!(info.params["fees"]["protocol"]["priceSource"], json!("pMint"));
+        // the doc says params.pq.feeRateZatPerKB = fees.network.plain.zatPerKB on a live node; the contract's
+        // static sample does not keep them equal (100 vs the priced rate), so only the shapes are checked here
+        assert!(info.params["fees"]["network"]["plain"]["zatPerKB"].is_u64() && info.params["pq"]["feeRateZatPerKB"].is_u64());
+        assert!(info.params["supplyCap"]["circulatingZat"].is_i64());
+        assert!(info.params["supplyCap"]["maxVaultShareBps"].is_i64());
         // rpcversion 7 (the quantum line): params.pq and the MINT payload version
         assert_eq!(info.params["pq"]["schemes"], json!([1]));
         assert_eq!(info.params["pq"]["falconActive"], json!(false));
@@ -787,6 +821,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(crate::model::yellowback::is_claimable_row(&rows[0]));
         assert_eq!(rows[0]["underwaterAt"], json!(436700));
+        assert!(rows[0]["pMint"].is_i64(), "rpcversion 8: every vault row carries pMint");
         assert_eq!((up.name.as_str(), up.branch_id.as_str(), up.status.as_str(), up.activation_height, up.claim_delay), ("Vault", "6d5b7a31", "active", 103, 10));
         assert_eq!(up.attestor_set_id, info.params["attestorSetId"].as_str().unwrap());
         for gone in ["enforcing", "valveTripped", "sunset", "abandoned", "rejectedBlocks", "suppressedBlocks", "activation", "templatePolicy"] {
@@ -813,6 +848,13 @@ mod tests {
         assert_eq!(verdict.verdict, "vault-spend-short-burn");
         assert!(!verdict.extra.contains_key("enforcementOn"));
         assert_eq!(verdict.transactions.len(), 1);
+    }
+
+    #[test]
+    fn feepayee_args_by_version() {
+        assert_eq!(feepayee_args(18, None), json!([18]));
+        assert_eq!(feepayee_args(18, Some(1_000_000_000)), json!([18, 1_000_000_000]));
+        assert!(MODELLED_RPC_VERSIONS.contains(&KNOWN_RPC_VERSION) && KNOWN_RPC_VERSION >= FEEPAYEE_NO_COLLATERAL_FROM);
     }
 
     /// The vault primitive's read RPCs as a live devnet on the upgrade answered them.
