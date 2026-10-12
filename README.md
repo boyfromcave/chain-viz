@@ -9,27 +9,36 @@ it, so a pool operator or a prospective attestor can see what participating pays
 holds a key, never broadcasts and never calls an RPC that writes; a CI test enforces that. One
 static binary, an embedded UI, no build step for the page.
 
-## Ycash Yellowback (YED) and the vault upgrade
+## Ycash vaults, Yellowback and YED
 
-This branch (`upgrade/vault`) watches nodes that carry a proposed Ycash network upgrade, **the
-vault upgrade**, which adds **vaults** to Ycash: YEC locked on chain under rules every node
-enforces, released only with the approval of a bonded **signer set**, after a delay during which
-the release can be cancelled, and always recoverable by its owner if the signers go silent.
-**Ycash Yellowback (YED)** is a dollar token built on vaults (`1 YED = 1 US dollar`); its
-YEC/USD price comes from mining pools and from **attestors**, members of Yellowback's signer set
-who sign prices.
+chain-viz is one component of the [Ycash vaults and Yellowback](https://github.com/boyfromcave/yellowback)
+project: a proposed Ycash network upgrade that adds **post-quantum vaults**, YEC locked on chain
+under rules every node checks, released only with the approval of a bonded **signer set**, after a
+delay during which the release can be cancelled, and always recoverable by its owner if the signers
+go silent. **Ycash Yellowback (YED)** is a dollar backed by YEC in vaults (`1 YED = $1`); its
+YEC/USD price comes from mining pools and from **attestors**, the bonded members of Yellowback's
+signer set who sign prices.
 
-- **What chain-viz shows:** YED prices, supply, collateral, vaults, claims and attestors, each
-  Yellowback transaction's verdict before a pool includes it, the fees pools and attestors
-  earn, and the vault upgrade itself: signer sets, vaults and pending releases of every
-  application, by tag.
-- **Node it needs:** any ycashd v4.5.0 or 6.20.0 for the chain and mempool views; for the
-  Yellowback and vault panels, a ycashd built from the `upgrade/vault` branch of
+> **Status: in development.** The upgrade runs on regtest and on a one-laptop devnet only. No
+> activation height is set on mainnet or testnet, the upgrade has not been adopted by the Ycash
+> Foundation, and there is no external audit. So the Yellowback and vault panels show data on a
+> local test network only.
+
+- **What chain-viz shows:** YED prices, supply, collateral, vaults, claims and each Yellowback
+  transaction's verdict before a pool includes it; the vault upgrade itself (signer sets, vaults
+  and pending releases of every application, by tag); and:
+  - **Fees:** the protocol fee bands (in dollars of the debt, at each vault's mint price `pMint`),
+    the network fee in dollars per KB at the attested price with its floor and cap, the maximum
+    mint and the supply cap, and what pools and attestors actually earn.
+  - **Attestors:** each member's bond and seat weight, evicted members, the bond minimum against
+    its floor and cap, and when a departing member's bond unlocks after the exit delay.
+  - **Post-quantum:** each vault owner's scheme (SLH-DSA) and 53-character address, Falcon and
+    SLH-DSA signature bytes per block, and post-quantum payees by their `sq…` (plain YEC) address.
+- **Node it needs:** any `ycashd` v4.5.0 or 6.20.0 for the chain and mempool views; for the
+  Yellowback and vault panels, a `ycashd` built from the `upgrade/quantum-vaults` branch of
   [ycash-dd](https://github.com/boyfromcave/ycash-dd) or
-  [ycash6](https://github.com/boyfromcave/ycash6).
-- **Status: proposed, not live.** It runs on a local test network (regtest) only. It has not been
-  adopted by the Ycash Foundation, has not been audited, and has no activation height on mainnet
-  or testnet. So the Yellowback and vault panels show data on a local test network only.
+  [ycash6](https://github.com/boyfromcave/ycash6) (this line joins `upgrade/vault` at release),
+  speaking Yellowback `rpcversion` 8 (7 and 6 are still modelled; see [rpcversion](#rpcversion)).
 - **Try it:** the node's devnet starts chain-viz for you; see
   [Run against the devnet](#run-against-the-devnet).
 
@@ -42,7 +51,8 @@ dependencies (rustls for HTTP, pure-Rust ZMQ):
 
 ```
 cargo build --release                                   # target/release/chain-viz
-cargo test && cargo clippy --all-targets -- -D warnings # what CI runs
+cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked   # what CI runs
+cargo deny --locked check                               # advisories, licences, sources (CI too)
 node qa/ui-smoke.mjs http://127.0.0.1:8480              # the UI panels under a fake DOM, against a live instance
 ```
 
@@ -114,7 +124,7 @@ line), `--datadir <dir>` (its `.cookie`, also `regtest/.cookie` and `testnet3/.c
 
 The node needs:
 
-* for the Yellowback and vault panels, a node built from `upgrade/vault` with the upgrade and the
+* for the Yellowback and vault panels, a node built from `upgrade/quantum-vaults` with the upgrade and the
   network's YED attestor set configured (no enabling flag; on regtest
   `-nuparams=6d5b7a31:<h> -yellowbackattestorset=<setid>`). A node without the `yed_*` RPCs is
   watched as chain + mempool only (`nodes[].yellowback = false`) and still counts in the
