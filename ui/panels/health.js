@@ -7,7 +7,7 @@
 // renders with plain SVG. Follows the panel contract of app.js: `init(store)`, `render(ctx)`.
 // Field names are the node's (doc/yellowback-rpc-contract.json): pFast/pMid/pSlow/pMint/pClaim
 // in micro-USD, supplyCents, collateralZat, globalRatioBps, haltMask, claimHeight, …
-import { h, svg, clear, fmtInt, tooltip, pqSchemeShort, shortAddr, PQ_SCHEMES, feeParamsText } from '../lib.js';
+import { h, svg, clear, fmtInt, tooltip, pqSchemeShort, shortAddr, PQ_SCHEMES, feeParamsText, bondMinText, seatRuleText, seatWeightZat, attestorExit } from '../lib.js';
 
 const $ = (id) => document.getElementById(id);
 const usd = (micro) => (micro === null || micro === undefined ? '–' : `$${(micro / 1e6).toFixed(4)}`);
@@ -95,7 +95,7 @@ export function render({ store, now }) {
   renderPrices(y, stats, d);
   renderSupply(y, stats, info);
   renderVaults(y, stats, d);
-  renderAttestors(y);
+  renderAttestors(y, info, d);
   renderConsistency(y, d);
   renderTxs(y, s, d);
 }
@@ -118,6 +118,7 @@ function renderRibbon(y, info, stats, d) {
     claimsState(info),
     pqState(info),
     feesState(info),
+    attestRulesState(info),
     h('span', { class: 'yb-state' }, h('b', {}, 'arming'), ` ${att.status || '?'} `, h('span', { class: 'muted' }, `${att.seatedCount ?? '–'} seated · pool ${att.poolSize ?? '–'} (fresh ${att.poolFresh ?? '–'}) · trigger ${att.triggerHeight ?? '–'} · arm ${att.armHeight ?? '–'}`)),
     h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, mintingWhy(info, stats))),
     noPriceState(y.noPrice),
@@ -143,6 +144,15 @@ function feesState(info) {
   const t = feeParamsText(info?.params); if (!t) return null;
   return h('span', { class: 'yb-state', title: `yed_getinfo.params.fees / maxMintCents / supplyCap (rpcversion 8)\n${t.protocol}\nearly-redeem ${t.early} of the debt at pMint\n${t.network}\n${t.supply}` },
     h('b', {}, 'fees'), ` ${t.protocol} `, h('span', { class: 'muted' }, `· ${t.network} · ${t.supply}`));
+}
+
+// The attestor rules (owner 2026-10-11, D-Q-30; rpcversion 8): the bond minimum computed from vault collateral
+// between its floor and cap, and the seat rule. An older node reports a constant bondMinZat and no seats.
+function attestRulesState(info) {
+  const a = info?.params?.attest, b = bondMinText(a); if (!b) return null;
+  const seats = seatRuleText(a);
+  return h('span', { class: 'yb-state', title: `yed_getinfo.params.attest\n${b.long}${seats ? '\n' + seats : ''}\nbond exit delay ${a.bondMaturity ?? '–'} blocks after leaving (bondMaturity) · bond min lock ${a.bondMinLock ?? '–'}` },
+    h('b', {}, 'attestors'), ` ${b.short} `, h('span', { class: 'muted' }, seats ? `· ${a.seats} seats · exit delay ${a.bondMaturity ?? '–'}` : `· exit delay ${a.bondMaturity ?? '–'}`));
 }
 
 // The claim rule's parameters (rpcversion 6, in-term IT-7 / IT-9): whether a claim is valid in term, θ, the
@@ -384,11 +394,21 @@ function voidSub(y) {
 }
 
 // ---------------------------------------------------------------- attestors
-function renderAttestors(y) {
+function renderAttestors(y, info, d) {
   const t = clear($('yb-attestors'));
-  t.append(h('tr', {}, ...['seq', 'status', 'bond YEC', 'seated', 'pinned', 'fresh', 'weight', 'last bundle', 'registered'].map((c) => h('th', {}, c))));
-  for (const a of y.attestors || []) t.append(h('tr', { 'data-status': a.status }, h('td', {}, String(a.seq)), h('td', {}, h('span', { class: 'yb-status', 'data-s': a.status }, a.status)), h('td', {}, yec(a.bondZat)), h('td', {}, a.seated ? `since ${a.seatedSince}` : 'no'), h('td', {}, a.pinned ? 'yes' : 'no'), h('td', {}, a.poolFresh ? 'yes' : 'no'), h('td', {}, String(a.weight ?? '–')), h('td', {}, String(a.lastBundleHeight ?? '–')), h('td', {}, String(a.registerHeight ?? '–'))));
-  if (!(y.attestors || []).length) t.append(h('tr', {}, h('td', { colspan: 9, class: 'muted' }, 'no attestors registered')));
+  const attest = info?.params?.attest, tip = d?.tip?.height ?? info?.height, next = tip === undefined || tip === null ? null : tip + 1;
+  const cols = ['seq', 'status', 'bond YEC', 'seated', 'pinned', 'fresh', 'weight', 'seat weight YEC', 'last bundle', 'registered', 'bond exit'];
+  t.append(h('tr', {}, ...cols.map((c) => h('th', { title: c === 'seat weight YEC' ? 'yed_listattestors.seatWeight ÷ 65,536: bond × the log tenure factor (1.0 → 1.9), without the seated margin' : c === 'bond exit' ? 'a WITHDRAWN record (left or evicted), bond not frozen and unspent: spendable from statusHeight + bondMaturity (and not before bondLocktime)' : null }, c))));
+  for (const a of y.attestors || []) {
+    const sw = seatWeightZat(a), ex = attestorExit(a, attest, next);
+    const exit = ex ? h('span', { class: ex.locked ? 'muted' : null, title: `left at ${a.statusHeight} · bondMaturity ${attest.bondMaturity}${a.bondLocktime ? ' · bondLocktime ' + a.bondLocktime : ''}` }, ex.locked ? `exit delay → ${ex.unlockAt}` : `spendable since ${ex.unlockAt}`)
+      : a.bondFrozen ? h('b', {}, 'frozen') : a.bondSpentHeight !== null && a.bondSpentHeight !== undefined ? `spent at ${a.bondSpentHeight}` : '–';
+    t.append(h('tr', { 'data-status': a.status }, h('td', {}, String(a.seq)),
+      h('td', {}, h('span', { class: 'yb-status', 'data-s': a.status }, a.status), a.evicted ? h('span', { class: 'yb-status', 'data-s': 'EVICTED', title: 'evicted from the full set by a larger bond (bond not frozen)' }, ' evicted') : null),
+      h('td', {}, yec(a.bondZat)), h('td', {}, a.seated ? `since ${a.seatedSince}` : 'no'), h('td', {}, a.pinned ? 'yes' : 'no'), h('td', {}, a.poolFresh ? 'yes' : 'no'), h('td', {}, String(a.weight ?? '–')),
+      h('td', { title: a.seatWeight ? `seatWeight ${a.seatWeight} (Q16)` : null }, sw === null ? '–' : yec(sw)), h('td', {}, String(a.lastBundleHeight ?? '–')), h('td', {}, String(a.registerHeight ?? '–')), h('td', {}, exit)));
+  }
+  if (!(y.attestors || []).length) t.append(h('tr', {}, h('td', { colspan: cols.length, class: 'muted' }, 'no attestors registered')));
 }
 
 // ---------------------------------------------------------------- consistency, rejected, miners

@@ -56,7 +56,7 @@
 #panel-health .yb-status { font-size: 11px; font-weight: 600; }
 #panel-health .yb-status[data-s="ELIGIBLE"], #panel-health .yb-status[data-s="OK"] { color: var(--good); }
 #panel-health .yb-status[data-s="EJECTED"], #panel-health .yb-status[data-s="BAD"] { color: var(--critical); }
-#panel-health .yb-status[data-s="DORMANT"], #panel-health .yb-status[data-s="PENDING"], #panel-health .yb-status[data-s="WITHDRAWN"] { color: var(--warning); }
+#panel-health .yb-status[data-s="DORMANT"], #panel-health .yb-status[data-s="PENDING"], #panel-health .yb-status[data-s="WITHDRAWN"], #panel-health .yb-status[data-s="EVICTED"] { color: var(--warning); }
 #panel-health .yb-bad { color: var(--critical); }
 #panel-health .yb-agree { font-weight: 600; margin-bottom: 4px; }
 #panel-health .yb-agree[data-agree="yes"] { color: var(--good); }

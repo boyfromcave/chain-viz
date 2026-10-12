@@ -86,6 +86,47 @@ export function feeParamsText(p) {
   const supply = `max mint ${p.maxMintCents === undefined ? '–' : dollars(p.maxMintCents)} · supply cap ${sc.capCents === null || sc.capCents === undefined ? '–' : dollars(sc.capCents)} (circulating ${sc.circulatingZat === undefined ? '–' : (sc.circulatingZat / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' YEC'}) · one vault ≤ ${sc.maxVaultCents === null || sc.maxVaultCents === undefined ? `max(${(sc.maxVaultShareBps ?? 0) / 100} % of the cap, ${sc.vaultShareFloorCents === undefined ? '–' : dollars(sc.vaultShareFloorCents)})` : dollars(sc.maxVaultCents)}`;
   return { protocol, network, supply, early: (f.earlyRedeemFeeBps || []).map((b, i) => `${'ABC'[i] || i} ${b / 100} %`).join(' / ') };
 }
+// The attestor rules (owner 2026-10-11, D-Q-30; rpcversion 8, no bump; ycash-dd doc/yellowback-rpc.md
+// yed_getinfo / yed_listattestors / yed_withdrawbond). Pure, every field optional: an older node lacks them.
+const yecText = (zat) => (zat === undefined || zat === null ? '–' : `${(zat / 1e8).toLocaleString('en-US', { maximumFractionDigits: 8 })} YEC`);
+// params.attest's bond minimum: bondMinZat is the floor a SET_JOIN in the next block must meet,
+// clamp(⌈collateralZat · bondShareBps / (10⁴ · nSlots)⌉, bondMinFloorZat, bondMinCapZat). Before the rule
+// bondMinZat was a constant (no floor/cap fields).
+export function bondMinText(attest) {
+  if (!attest || attest.bondMinZat === undefined) return null;
+  const now = `bond min ${yecText(attest.bondMinZat)}`;
+  if (attest.bondMinFloorZat === undefined) return { short: now, long: `${now} (a constant on this node)` };
+  const at = attest.bondMinZat <= attest.bondMinFloorZat ? 'at the floor' : attest.bondMinZat >= attest.bondMinCapZat ? 'at the cap' : 'collateral share';
+  const share = attest.bondShareBps === undefined ? '–' : `${attest.bondShareBps / 100} %`;
+  return {
+    short: `${now} (${at}) · floor ${yecText(attest.bondMinFloorZat)} · cap ${yecText(attest.bondMinCapZat)}`,
+    long: `${now} for a join in the next block (${at}): clamp(${share} of YED vault collateral ÷ slots, floor ${yecText(attest.bondMinFloorZat)}, cap ${yecText(attest.bondMinCapZat)})`,
+  };
+}
+// The seat rule: `seats` seats ranked by seatWeight (bond × a log tenure factor 1.0 → 1.9 at seatAgeCap), a seated
+// attestor counting ×(1 + seatMarginBps); a join into the full set evicts the non-live member, else the least seat
+// weight when the new bond beats it by evictMarginBps.
+export function seatRuleText(attest) {
+  if (!attest || attest.seats === undefined) return null;
+  const pc = (b) => (b === undefined ? '–' : `${b / 100} %`);
+  return `${attest.seats} seats · tenure unit ${attest.seatAgeUnit ?? '–'} blocks, cap ${attest.seatAgeCap ?? '–'} (×1.9) · seated margin ${pc(attest.seatMarginBps)} · eviction margin ${pc(attest.evictMarginBps)}`;
+}
+// yed_listattestors.seatWeight: a decimal string in Q16 (zat × 65,536); null when absent or not an integer.
+export function seatWeightZat(a) {
+  const s = a?.seatWeight;
+  if (typeof s !== 'string' || !/^\d+$/.test(s)) return null;
+  return Number(BigInt(s) / 65536n);
+}
+// The bond exit delay: a WITHDRAWN record (it left with set_leave, or was evicted) whose bond is not frozen and
+// not yet spent is spendable from statusHeight + bondMaturity (the set's maturity), and not before its own CLTV
+// bondLocktime (yed_withdrawbond's bond-locked). null for any other record, or when the node gives no
+// bondMaturity. `locked`: the next block is still before the unlock height.
+export function attestorExit(a, attest, nextHeight) {
+  if (!a || a.status !== 'WITHDRAWN' || a.bondFrozen || (a.bondSpentHeight !== null && a.bondSpentHeight !== undefined)) return null;
+  if (attest?.bondMaturity === undefined || a.statusHeight === undefined || a.statusHeight === null) return null;
+  const unlockAt = Math.max(a.statusHeight + attest.bondMaturity, a.bondLocktime ?? 0);
+  return { unlockAt, locked: nextHeight === undefined || nextHeight === null ? null : nextHeight < unlockAt };
+}
 export const shortAddr = (a) => (a ? (a.length > 20 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a) : '–');
 
 // One shared tooltip. show(html-free text, x, y).
