@@ -374,7 +374,7 @@ function renderVaultTable(vs, claimable, listedSet, rows, t) {
   for (const p of [...vs].sort((a, b) => a.ratio - b.ratio)) {
     const row = byKey.get(p.key), state = claimable.has(p.key) ? 'CLAIMABLE now' : listedSet.has(p.key) ? 'listed, above θ' : '–';
     tb.append(h('tr', { 'data-bad': claimable.has(p.key) ? '1' : '0' }, h('td', {}, h('code', {}, `${p.key.slice(0, 10)}…`)), h('td', {}, p.v.termClass || '–'), h('td', {}, pct(p.ratio)),
-      h('td', { title: 'pMint: the price this vault was minted at (rpcversion 8)' }, usd(row?.pMint ?? p.v.pMint)), h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state), cancelCell(p.v), ownerCell(p.v)));
+      h('td', { title: 'pMint: the price this vault was minted at (rpcversion 8)' }, usd(row?.pMint ?? p.v.pMint)), h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state), cancelCell(row && row.cancelsRequired !== undefined ? { ...p.v, ...row, heldResiduals: p.v.heldResiduals } : p.v), ownerCell(p.v)));
   }
   if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 9, class: 'muted' }, 'no active vaults')));
 }

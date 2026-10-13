@@ -1,5 +1,5 @@
 {
- "_source": "ycash-dd upgrade/vault 8af82551b doc/yellowback-rpc-contract.json rpcversion 8, the \"returns\" samples (yed_*; yed_listvaults from ycash-dd 1c705586e, with the per-vault cancel limit's cancelCount, cancelsRequired, cancelQuietUntil); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md), their EC owners rewritten to the quantum line's PQ owner (ownerkey -> owner = 01 || SHA256(01 || old key) as a stand-in key hash, ownerscheme 1; every V/I owner slot 21<key>ac -> 20<hash>51c2, quantum spec §1.1, and each intent's vaulthash recomputed as SHA256 of its rewritten origin; checked with vault_decodescript on wt/q-dd); vault_getinfo gained attestorsetid (the set_getinfo sample's set) and moduleactive at ycash-dd 8af82551b (audit 01/V-7, doc/vault-rpc-contract.json)",
+ "_source": "ycash-dd upgrade/vault 8af82551b doc/yellowback-rpc-contract.json rpcversion 8, the \"returns\" samples (yed_*; yed_listvaults from ycash-dd 1c705586e and yed_listclaimable from ycash-dd fix/cancel-fields-2 cac49a8e3, both with the per-vault cancel limit's cancelCount, cancelsRequired, cancelQuietUntil); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md), their EC owners rewritten to the quantum line's PQ owner (ownerkey -> owner = 01 || SHA256(01 || old key) as a stand-in key hash, ownerscheme 1; every V/I owner slot 21<key>ac -> 20<hash>51c2, quantum spec §1.1, and each intent's vaulthash recomputed as SHA256 of its rewritten origin; checked with vault_decodescript on wt/q-dd); vault_getinfo gained attestorsetid (the set_getinfo sample's set) and moduleactive at ycash-dd 8af82551b (audit 01/V-7, doc/vault-rpc-contract.json)",
  "set_getinfo": {
   "active": 1,
   "admitkey": "02c3ac780b7c19de91e8a70b6c80a168fc7cd32b326aef9c677f5c98157e78fb7d",
@@ -542,6 +542,9 @@
  "yed_listclaimable": [
   {
    "attestFeeZat": 251889169,
+   "cancelCount": 0,
+   "cancelQuietUntil": null,
+   "cancelsRequired": 1,
    "claimHeight": 401,
    "claimPath": "a",
    "claimable": true,

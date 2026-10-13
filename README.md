@@ -268,7 +268,8 @@ and on rpcversion 7 the owner: its post-quantum scheme and 53-character `ownerAd
 with the per-vault cancel limit (CAN-2, CAN-3; additive, `rpcversion` unchanged) a `cancel needs` column, read-only: `cancelsRequired`
 co-signers of distinct current attestor-set members for a cancel in the next block, `cancelCount` and `cancelQuietUntil` once
 the vault was cancelled, and how many owner residuals the position holds (`heldResiduals`, released at close, or from
-`cancelQuietUntil` while no claim could pass), the outpoints on hover);
+`cancelQuietUntil` while no claim could pass), the outpoints on hover; a `yed_listclaimable` row's own cancel-limit fields are
+preferred when the node sends them, ycash-dd/ycash6 `fix/cancel-fields-2`);
 the attestor table (on rpcversion 8 with the attestor rules: the seat weight `seatWeight` ÷ 65,536 in YEC, an
 `evicted` mark on a WITHDRAWN record evicted from the full set, and the bond exit: a WITHDRAWN record whose bond is
 not frozen or spent unlocks at `statusHeight + bondMaturity`, not before its `bondLocktime`), with the ribbon's
