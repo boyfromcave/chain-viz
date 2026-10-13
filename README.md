@@ -264,7 +264,11 @@ collateral tiles with the global ratio against the node's claim threshold θ and
 105 % on the in-term line); a vault scatter (ratio × blocks to `lockHeight` when claims are valid in term, to
 `claimHeight` otherwise; vaults claimable now ringed) and a vault table (ratio, the claimable-at price
 `underwaterAt`, and `CLAIMABLE now` or `listed, above θ` for a `yed_listclaimable` row with `claimable: false`,
-and on rpcversion 7 the owner: its post-quantum scheme and 53-character `ownerAddress`, a vault identifier, never a YED receive address);
+and on rpcversion 7 the owner: its post-quantum scheme and 53-character `ownerAddress`, a vault identifier, never a YED receive address;
+with the per-vault cancel limit (CAN-2, CAN-3; additive, `rpcversion` unchanged) a `cancel needs` column, read-only: `cancelsRequired`
+co-signers of distinct current attestor-set members for a cancel in the next block, `cancelCount` and `cancelQuietUntil` once
+the vault was cancelled, and how many owner residuals the position holds (`heldResiduals`, released at close, or from
+`cancelQuietUntil` while no claim could pass), the outpoints on hover);
 the attestor table (on rpcversion 8 with the attestor rules: the seat weight `seatWeight` ÷ 65,536 in YEC, an
 `evicted` mark on a WITHDRAWN record evicted from the full set, and the bond exit: a WITHDRAWN record whose bond is
 not frozen or spent unlocks at `statusHeight + bondMaturity`, not before its `bondLocktime`), with the ribbon's

@@ -543,6 +543,41 @@ pub fn feepayee_args(ref_height: u64, collateral_zat: Option<i64>) -> Value {
     }
 }
 
+/// One outpoint of a `yed_*` answer (`{txid, vout}`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct YedOutpoint {
+    pub txid: String,
+    pub vout: u32,
+}
+
+/// The per-vault cancel limit of a `yed_getvault` / `yed_listvaults` row (the workspace's
+/// `docs/plans/yellowback-cancel-limit-design.md`, upgrade plan §15.10 CAN-2, CAN-3; additive,
+/// `rpcversion` unchanged). chain-viz relays vault rows untyped; this is the read-only view the UI's
+/// vault table shows. `cancelsRequired` is for a cancel in the block after the node's tip:
+/// `min(q + 1, CANCEL_SIGNERS_MAX)`, `q` = `cancelCount` inside the quiet period, else 0.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YedVaultCancel {
+    /// The position's cancels counted by the escalation schedule (0 at the mint).
+    pub cancel_count: u32,
+    /// Distinct current attestor-set members whose co-signatures a cancel of its claim needs.
+    pub cancels_required: u32,
+    /// The first height the schedule starts from one again; `None` when never cancelled.
+    #[serde(default)]
+    pub cancel_quiet_until: Option<u64>,
+    /// The residual intents of cancelled claims the position holds (CAN-3); absent = none.
+    #[serde(default)]
+    pub held_residuals: Vec<YedOutpoint>,
+}
+
+impl YedVaultCancel {
+    /// The cancel limit of one vault row; `None` for a node that predates it (no `cancelsRequired`).
+    pub fn of(row: &Value) -> Option<YedVaultCancel> {
+        row.get("cancelsRequired")?;
+        serde_json::from_value(row.clone()).ok()
+    }
+}
+
 /// `yed_getinfo` at rpcversion 5 (the vault upgrade, upgrade plan §6, §15.10): `enforcing`,
 /// `valveTripped`, `sunset`, `abandoned`, `rejectedBlocks`, `suppressedBlocks`, `activation`
 /// and `templatePolicy` are gone; `upgrade` (the `yed_getactivation` object) is new. Anything a
@@ -880,6 +915,30 @@ mod tests {
         assert_eq!(feepayee_args(18, None), json!([18]));
         assert_eq!(feepayee_args(18, Some(1_000_000_000)), json!([18, 1_000_000_000]));
         assert!(MODELLED_RPC_VERSIONS.contains(&KNOWN_RPC_VERSION) && KNOWN_RPC_VERSION >= FEEPAYEE_NO_COLLATERAL_FROM);
+    }
+
+    /// The per-vault cancel limit (CAN-2, CAN-3) on the contract's `yed_listvaults` row (a vault never
+    /// cancelled: 0, 1, null, no held residual), on a cancelled row, and absent on an older node's row.
+    #[test]
+    fn vault_cancel_limit_parses() {
+        let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rpc-contract-samples.json")).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        let row = v["yed_listvaults"][0].clone();
+        let never = YedVaultCancel::of(&row).expect("the contract row carries the cancel limit");
+        assert_eq!(never, YedVaultCancel { cancel_count: 0, cancels_required: 1, cancel_quiet_until: None, held_residuals: vec![] });
+        let mut cancelled = row.clone();
+        cancelled["cancelCount"] = json!(2);
+        cancelled["cancelsRequired"] = json!(3);
+        cancelled["cancelQuietUntil"] = json!(8512);
+        cancelled["heldResiduals"] = json!([{ "txid": "c1".repeat(32), "vout": 1 }]);
+        let c = YedVaultCancel::of(&cancelled).unwrap();
+        assert_eq!((c.cancel_count, c.cancels_required, c.cancel_quiet_until), (2, 3, Some(8512)));
+        assert_eq!(c.held_residuals, vec![YedOutpoint { txid: "c1".repeat(32), vout: 1 }]);
+        let mut old = row;
+        for k in ["cancelCount", "cancelsRequired", "cancelQuietUntil"] {
+            old.as_object_mut().unwrap().remove(k);
+        }
+        assert!(YedVaultCancel::of(&old).is_none());
     }
 
     /// The vault primitive's read RPCs as a live devnet on the upgrade answered them.
