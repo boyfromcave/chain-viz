@@ -939,6 +939,9 @@ mod tests {
             old.as_object_mut().unwrap().remove(k);
         }
         assert!(YedVaultCancel::of(&old).is_none());
+        // yed_listclaimable rows carry the same three fields (node fix/cancel-fields-2): what a claim faces.
+        let claim = YedVaultCancel::of(&v["yed_listclaimable"][0]).expect("a claimable row carries the cancel limit");
+        assert_eq!((claim.cancel_count, claim.cancels_required, claim.cancel_quiet_until), (0, 1, None));
     }
 
     /// The vault primitive's read RPCs as a live devnet on the upgrade answered them.
