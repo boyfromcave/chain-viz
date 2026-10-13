@@ -356,7 +356,7 @@ function renderVaults(y, stats, d) {
   for (const p of vs) {
     const isC = claimable.has(p.key), under = p.ratio < t.theta;
     const dot = svg('circle', { cx: x(p.toClaim), cy: yy(p.ratio), r: isC ? 7 : 5, fill: cls[p.v.termClass] || 'var(--s6)', 'fill-opacity': 0.85, stroke: isC ? 'var(--critical)' : under ? 'var(--serious)' : 'var(--surface)', 'stroke-width': isC ? 3 : 2 });
-    tooltip(dot, () => `vault ${p.key.slice(0, 16)}…  class ${p.v.termClass}\nratio ${pct(p.ratio)} at pClaim ${usd(pClaim)}  (claimable at ${usd(p.v.underwaterAt)}, θ ${pct(t.theta)})\nminted ${yed(p.v.mintedCents)} YED  collateral ${yec(p.v.collateralZat)} YEC${p.v.pMint ? '  pMint ' + usd(p.v.pMint) : ''}\nmint ${p.v.mintHeight} → lock ${p.v.lockHeight} → claim ${p.v.claimHeight} (${p.toClaim} blocks to ${xField})${p.v.noticed ? '\nNOTICED at ' + p.v.noticeHeight : ''}${isC ? '\nCLAIMABLE now' : listedSet.has(p.key) ? '\nlisted, not claimable (above θ)' : ''}`);
+    tooltip(dot, () => `vault ${p.key.slice(0, 16)}…  class ${p.v.termClass}\nratio ${pct(p.ratio)} at pClaim ${usd(pClaim)}  (claimable at ${usd(p.v.underwaterAt)}, θ ${pct(t.theta)})\nminted ${yed(p.v.mintedCents)} YED  collateral ${yec(p.v.collateralZat)} YEC${p.v.pMint ? '  pMint ' + usd(p.v.pMint) : ''}\nmint ${p.v.mintHeight} → lock ${p.v.lockHeight} → claim ${p.v.claimHeight} (${p.toClaim} blocks to ${xField})${p.v.noticed ? '\nNOTICED at ' + p.v.noticeHeight : ''}${cancelText(p.v) ? '\ncancel needs ' + cancelText(p.v) : ''}${isC ? '\nCLAIMABLE now' : listedSet.has(p.key) ? '\nlisted, not claimable (above θ)' : ''}`);
     el.append(dot);
   }
   const lg = clear($('yb-vault-legend'));
@@ -369,14 +369,31 @@ function renderVaults(y, stats, d) {
 function renderVaultTable(vs, claimable, listedSet, rows, t) {
   const tb = clear($('yb-vault-table')); if (!tb) return;
   // rpcversion 8: pMint, the vault's stored mint price every fee of it is struck at (FEE-1', RED-3', IT-9')
-  tb.append(h('tr', {}, ...['vault', 'class', 'ratio', 'mint price', 'claimable at', 'lock', 'claim', 'owner'].map((c) => h('th', {}, c))));
+  tb.append(h('tr', {}, ...['vault', 'class', 'ratio', 'mint price', 'claimable at', 'lock', 'claim', 'cancel needs', 'owner'].map((c) => h('th', {}, c))));
   const byKey = new Map(rows.map((c) => [c.vault, c]));
   for (const p of [...vs].sort((a, b) => a.ratio - b.ratio)) {
     const row = byKey.get(p.key), state = claimable.has(p.key) ? 'CLAIMABLE now' : listedSet.has(p.key) ? 'listed, above θ' : '–';
     tb.append(h('tr', { 'data-bad': claimable.has(p.key) ? '1' : '0' }, h('td', {}, h('code', {}, `${p.key.slice(0, 10)}…`)), h('td', {}, p.v.termClass || '–'), h('td', {}, pct(p.ratio)),
-      h('td', { title: 'pMint: the price this vault was minted at (rpcversion 8)' }, usd(row?.pMint ?? p.v.pMint)), h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state), ownerCell(p.v)));
+      h('td', { title: 'pMint: the price this vault was minted at (rpcversion 8)' }, usd(row?.pMint ?? p.v.pMint)), h('td', {}, usd(row?.underwaterAt ?? p.v.underwaterAt)), h('td', {}, String(p.v.lockHeight ?? '–')), h('td', {}, state), cancelCell(p.v), ownerCell(p.v)));
   }
-  if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 8, class: 'muted' }, 'no active vaults')));
+  if (!vs.length) tb.append(h('tr', {}, h('td', { colspan: 9, class: 'muted' }, 'no active vaults')));
+}
+
+// The per-vault cancel limit (CAN-2, CAN-3; additive, rpcversion unchanged): how many attestor-set members must
+// co-sign a cancel of a claim in the next block (cancelsRequired), the counted cancels and the quiet period's end
+// (cancelQuietUntil, null when never cancelled), and the owner residuals the position holds (heldResiduals, released
+// at close, or from cancelQuietUntil while no claim could pass). Read-only; an older node's row has none of it.
+function cancelText(v) {
+  if (v.cancelsRequired === undefined) return '';
+  const held = (v.heldResiduals || []).length;
+  const quiet = v.cancelQuietUntil === null || v.cancelQuietUntil === undefined ? '' : ` · ${v.cancelCount} cancelled, quiet until ${v.cancelQuietUntil}`;
+  return `${v.cancelsRequired} co-signer${v.cancelsRequired === 1 ? '' : 's'}${quiet}${held ? ` · ${held} residual${held === 1 ? '' : 's'} held` : ''}`;
+}
+function cancelCell(v) {
+  const text = cancelText(v);
+  if (!text) return h('td', { class: 'muted' }, '–');
+  const held = (v.heldResiduals || []).map((o) => `${o.txid}:${o.vout}`).join('\n');
+  return h('td', { title: `cancelsRequired ${v.cancelsRequired} (distinct current attestor-set members, a cancel in the next block)\ncancelCount ${v.cancelCount}\ncancelQuietUntil ${v.cancelQuietUntil ?? 'null (never cancelled)'}${held ? '\nheldResiduals (released at close, or from cancelQuietUntil while not claimable):\n' + held : ''}` }, text);
 }
 
 // The vault owner (rpcversion 7): its post-quantum scheme and PQ address, a vault identifier and never a YED
