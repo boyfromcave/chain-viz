@@ -14,7 +14,7 @@
 //! - Addresses are Base58Check(version ‖ scheme ‖ keyHash), 53 characters: the plain-YEC PQ address
 //!   (`sq…`/`tq…`/`rq…`, D-Q-20, what `getblock`'s `scriptPubKey.addresses` spells for a PQPKH
 //!   output, `key_io.cpp`) and the PQ Yellowback address (`yb…`/`yt…`/`yr…`, spec §4 and D-Q-21,
-//!   what `ownerAddress` and `vault_getnewowner.address` spell).
+//!   what `ownerAddress` and the wallet RPC that makes a new owner key spell).
 
 use sha2::{Digest, Sha256};
 
