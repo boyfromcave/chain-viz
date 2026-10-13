@@ -1,5 +1,5 @@
 {
- "_source": "ycash-dd q/attest (wt/q-attest 4bb710b4c) doc/yellowback-rpc-contract.json rpcversion 8, the \"returns\" samples (yed_*); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md), their EC owners rewritten to the quantum line's PQ owner (ownerkey -> owner = 01 || SHA256(01 || old key) as a stand-in key hash, ownerscheme 1; every V/I owner slot 21<key>ac -> 20<hash>51c2, quantum spec §1.1, and each intent's vaulthash recomputed as SHA256 of its rewritten origin; checked with vault_decodescript on wt/q-dd)",
+ "_source": "ycash-dd upgrade/vault 8af82551b doc/yellowback-rpc-contract.json rpcversion 8, the \"returns\" samples (yed_*); vault_* / set_* recorded from a live devnet on wt/up-dd (doc/vault-rpc.md), their EC owners rewritten to the quantum line's PQ owner (ownerkey -> owner = 01 || SHA256(01 || old key) as a stand-in key hash, ownerscheme 1; every V/I owner slot 21<key>ac -> 20<hash>51c2, quantum spec §1.1, and each intent's vaulthash recomputed as SHA256 of its rewritten origin; checked with vault_decodescript on wt/q-dd); vault_getinfo gained attestorsetid (the set_getinfo sample's set) and moduleactive at ycash-dd 8af82551b (audit 01/V-7, doc/vault-rpc-contract.json)",
  "set_getinfo": {
   "active": 1,
   "admitkey": "02c3ac780b7c19de91e8a70b6c80a168fc7cd32b326aef9c677f5c98157e78fb7d",
@@ -128,6 +128,7 @@
  "vault_getinfo": {
   "activationheight": 103,
   "active": true,
+  "attestorsetid": "4ea375000f64953277a400c4d4693bfa85239494437387f9db127062f0e6ec73",
   "branchid": "6d5b7a31",
   "dbtip": {
    "hash": "054d7a780efaf7e108b23aaec3fe2b84577ae24450860c9f17f0babb20fa0229",
@@ -136,6 +137,7 @@
   "height": 243,
   "intents": 1,
   "lockedvalue": 9.0,
+  "moduleactive": true,
   "sets": 2,
   "statehash": "ffaf5133a5cf29814acdbe3b121d063267cd6c55f1999927ce60522790b659f3",
   "vaults": 4
@@ -315,9 +317,9 @@
     "attestMaxAge": 8,
     "bondMaturity": 8,
     "bondMinCapZat": 1000000000,
-    "bondMinFloorZat": 250000000,
+    "bondMinFloorZat": 500000000,
     "bondMinLock": 0,
-    "bondMinZat": 250000000,
+    "bondMinZat": 500000000,
     "bondShareBps": 500,
     "bundleMax": 6,
     "carrierMode": "scriptsig",

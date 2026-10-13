@@ -708,6 +708,13 @@ pub struct VaultInfo {
     pub lockedvalue: f64,
     #[serde(default)]
     pub statehash: String,
+    /// The set the registered module (YED) governs on this node, null when it governs none (audit
+    /// 01/V-7): two nodes reporting different values compute different set state for the same blocks.
+    #[serde(default)]
+    pub attestorsetid: Option<String>,
+    /// Whether the module governs a set on this node (`attestorsetid` is not null).
+    #[serde(default)]
+    pub moduleactive: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -883,6 +890,14 @@ mod tests {
         let info: VaultInfo = serde_json::from_value(v["vault_getinfo"].clone()).unwrap();
         assert_eq!((info.branchid.as_str(), info.activationheight, info.active), ("6d5b7a31", 103, true));
         assert_eq!(info.statehash.len(), 64);
+        // audit 01/V-7: the module's attestor set and whether it governs one
+        assert!(info.moduleactive);
+        assert_eq!(info.attestorsetid.as_deref(), v["set_getinfo"]["setid"].as_str());
+        let mut none = v["vault_getinfo"].clone();
+        none["attestorsetid"] = Value::Null;
+        none["moduleactive"] = false.into();
+        let none: VaultInfo = serde_json::from_value(none).unwrap();
+        assert!(none.attestorsetid.is_none() && !none.moduleactive);
         assert!(info.extra.is_empty(), "every vault_getinfo field is typed: {:?}", info.extra.keys().collect::<Vec<_>>());
         let sets: Vec<Value> = serde_json::from_value(v["set_list"].clone()).unwrap();
         assert!(sets.iter().all(|s| s.get("memberlist").is_none() && s["setid"].is_string() && s["ratelimitbps"].is_u64()));

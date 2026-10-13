@@ -65,6 +65,15 @@ const FORBIDDEN: &[&str] = &[
     "vault_release",
     "vault_ownerspend",
     "vault_app",
+    // the wallet RPCs added after the 2026-10-13 audit (ycash-dd 8af82551b): re-funding a set
+    // spend (01/V-2), the sign-once records and the restore marker (07/F-5), the YED attestor
+    // cancel builder, and the two older ones the list missed
+    "vault_refee",
+    "set_importsigned",
+    "set_acknowledgerestore",
+    "set_leave",
+    "vault_getnewowner",
+    "yed_buildcancel",
 ];
 
 fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
