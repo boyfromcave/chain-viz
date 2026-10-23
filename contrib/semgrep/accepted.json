@@ -1,0 +1,39 @@
+{
+  "_comment": "Accepted Semgrep findings (contrib/semgrep/README.md, 'Accepting a finding'). findings: fingerprint -> {rule, path, reason, by, date}. rule_paths: [{rule (glob), paths (globs), reason, by, date}]. Every entry needs a reason a reviewer can check.",
+  "findings": {
+    "fc5d4dd2a0fb4f4b": {
+      "rule": "rust.lang.security.temp-dir",
+      "path": "src/auth.rs",
+      "reason": "Inside #[cfg(test)] mod tests (finds_regtest_subdir): a per-process scratch directory holding a dummy cookie, removed at the end of the test. Not in the shipped binary.",
+      "by": "secops CI setup",
+      "date": "2026-10-23"
+    },
+    "ff83bc119503a1f1": {
+      "rule": "rust.lang.security.temp-dir",
+      "path": "src/session.rs",
+      "reason": "Inside #[cfg(test)] mod tests (recorder_appends_and_flushes): a per-process scratch directory for a recorded session. Not in the shipped binary.",
+      "by": "secops CI setup",
+      "date": "2026-10-23"
+    }
+  },
+  "rule_paths": [
+    {
+      "rule": "rust.lang.security.temp-dir",
+      "paths": [
+        "tests/**"
+      ],
+      "reason": "Integration tests create per-process scratch directories under the OS temp dir; the server itself never does.",
+      "by": "secops CI setup",
+      "date": "2026-10-23"
+    },
+    {
+      "rule": "javascript.jquery.security.*",
+      "paths": [
+        "ui/**"
+      ],
+      "reason": "The UI uses no jQuery (no dependency, no build step). `$` is a local document.getElementById alias (e.g. ui/panels/events.js:8) and `.append` is the DOM Element.append, which inserts strings as text nodes, not HTML. HTML sinks are covered by chainviz.ui.html-sink.",
+      "by": "secops CI setup",
+      "date": "2026-10-23"
+    }
+  ]
+}

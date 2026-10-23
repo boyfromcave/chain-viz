@@ -1,0 +1,32 @@
+# Copyright (c) 2026 The Ycash developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+#
+# chain-viz's read-only contract (workspace docs/plans/chain-viz-plan.md §4, workspace CLAUDE.md rule 2): the server reaches the node through
+# read RPCs only. tests/readonly_gate.rs lists the writers by name; this rule backs it with a
+# pattern, so a new yed_* mutator (anything not a get/list/decode/validate reader) is caught before
+# the list is updated. Test cases: chainviz-readonly.rs (semgrep --test contrib/semgrep/rules).
+rules:
+  - id: chainviz.readonly.writer-rpc
+    languages: [rust]
+    paths:
+      include: ["/src/**"]
+    patterns:
+      - pattern: '"$NAME"'
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: >-
+            ^(yed_(?!get|list|decode|validate)[a-z_]+|set_(create|join|heartbeat|buildact|signact|sendact|equivocation|signunlock|signcancel|importsigned|acknowledgerestore|leave)|vault_(lock|build[a-z]*|send|release|ownerspend|app|refee|getnewowner)|sendrawtransaction|submitblock|generate|generatetoaddress|getblocktemplate|invalidateblock|reconsiderblock|sendtoaddress|sendmany|z_sendmany|importprivkey|dumpprivkey|walletpassphrase|getnewaddress|signrawtransaction|createrawtransaction)$
+    message: >-
+      chain-viz names a node RPC that writes (a transaction, a block, a key or a set/vault act).
+      chain-viz is a read-only sidecar: it calls stock read RPCs and the read-only yed_*/set_*/vault_*
+      RPCs only, and never needs a node change (chain-viz-plan.md §4, tests/readonly_gate.rs).
+    severity: ERROR
+    metadata:
+      category: security
+      bucket: critical
+      impact: HIGH
+      likelihood: MEDIUM
+      confidence: HIGH
+      cwe: ["CWE-284: Improper Access Control"]
+      references: ["tests/readonly_gate.rs", "workspace CLAUDE.md rule 2 (chain-viz)"]
