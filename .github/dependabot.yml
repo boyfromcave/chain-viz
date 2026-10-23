@@ -1,0 +1,43 @@
+# Dependabot: security updates only, one grouped PR per ecosystem (SECURITY-CI.md). Version updates are
+# suppressed (open-pull-requests-limit: 0); routine bumps are deliberate PRs (Cargo.lock is committed,
+# builds are --locked, actions are SHA-pinned). Security updates ignore that limit and land as a single
+# "security" group per ecosystem, updated in place.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The hash-locked CI tool requirements (contrib/semgrep/requirements.txt is shared with ycash-dd;
+  # contrib/secops/zizmor-requirements.txt). Nothing here ships in a chain-viz release.
+  - package-ecosystem: pip
+    directories: [/contrib/semgrep, /contrib/secops]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]

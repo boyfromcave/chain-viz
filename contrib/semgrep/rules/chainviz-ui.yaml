@@ -1,0 +1,60 @@
+# Copyright (c) 2026 The Ycash developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://www.opensource.org/licenses/mit-license.php .
+#
+# The UI (ui/) renders node-supplied strings (txids, addresses, memos, script hex, error text) with
+# textContent and createElement only (ui/lib.js el()). An HTML sink fed anything but a string
+# literal turns a crafted memo or RPC error into script in the operator's browser.
+# Test cases: chainviz-ui.js (semgrep --test contrib/semgrep/rules).
+rules:
+  - id: chainviz.ui.html-sink
+    languages: [javascript]
+    paths:
+      include: ["/ui/**", "/qa/**"]
+    patterns:
+      - pattern-either:
+          - pattern: $E.innerHTML = $X
+          - pattern: $E.outerHTML = $X
+          - pattern: $E.innerHTML += $X
+          - pattern: $E.insertAdjacentHTML($P, $X)
+          - pattern: document.write($X)
+          - pattern: document.writeln($X)
+          - pattern: $R.createContextualFragment($X)
+          - pattern: new DOMParser().parseFromString($X, ...)
+          - pattern: $E.setHTMLUnsafe($X)
+      - pattern-not: $E.innerHTML = "..."
+      - pattern-not: $E.innerHTML = ''
+      - pattern-not: $E.outerHTML = "..."
+      - pattern-not: $E.insertAdjacentHTML($P, "...")
+    message: >-
+      An HTML sink receives a value that is not a string literal. chain-viz renders node-supplied
+      strings with textContent / el() only; build the DOM with ui/lib.js el() instead.
+    severity: ERROR
+    metadata:
+      category: security
+      bucket: high
+      impact: HIGH
+      likelihood: MEDIUM
+      confidence: MEDIUM
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"]
+      references: ["ui/lib.js"]
+
+  - id: chainviz.ui.code-from-string
+    languages: [javascript]
+    paths:
+      include: ["/ui/**"]
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
+    message: >-
+      Code built from a string in the UI. Nothing in
+      chain-viz needs it, and a node-supplied string reaching it runs as script; pass a function instead.
+    severity: WARNING
+    metadata:
+      category: security
+      impact: MEDIUM
+      likelihood: LOW
+      confidence: HIGH
+      cwe: ["CWE-95: Eval Injection"]
