@@ -1,0 +1,453 @@
+[
+ {
+  "number": 8,
+  "created_at": "2026-10-23T05:41:39Z",
+  "updated_at": "2026-10-23T05:41:39Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/8",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/8",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "rust/cleartext-logging",
+   "severity": "warning",
+   "description": "Cleartext logging of sensitive information",
+   "name": "rust/cleartext-logging",
+   "tags": [
+    "external/cwe/cwe-312",
+    "external/cwe/cwe-359",
+    "external/cwe/cwe-532",
+    "security"
+   ],
+   "full_description": "Logging sensitive information in plaintext can expose it to an attacker.",
+   "help": "# Cleartext logging of sensitive information\nSensitive user data and system information that is logged could be exposed to an attacker when it is displayed. Also, external processes often store the standard output and standard error streams of an application, which will include logged sensitive information.\n\n\n## Recommendation\nDo not log sensitive data. If it is necessary to log sensitive data, encrypt it before logging.\n\n\n## Example\nThe following example code logs user credentials (in this case, their password) in plaintext:\n\n\n```rust\nlet password = \"P@ssw0rd\";\ninfo!(\"User password changed to {password}\");\n\n```\nInstead, you should encrypt the credentials, or better still, omit them entirely:\n\n\n```rust\nlet password = \"P@ssw0rd\";\ninfo!(\"User password changed\");\n\n```\n\n## References\n* M. Dowd, J. McDonald and J. Schuhm, *The Art of Software Security Assessment*, 1st Edition, Chapter 2 - 'Common Vulnerabilities of Encryption', p. 43. Addison Wesley, 2006.\n* M. Howard and D. LeBlanc, *Writing Secure Code*, 2nd Edition, Chapter 9 - 'Protecting Secret Data', p. 299. Microsoft, 2002.\n* OWASP: [Logging Cheat Sheet - Data to exclude](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude).\n* Common Weakness Enumeration: [CWE-312](https://cwe.mitre.org/data/definitions/312.html).\n* Common Weakness Enumeration: [CWE-359](https://cwe.mitre.org/data/definitions/359.html).\n* Common Weakness Enumeration: [CWE-532](https://cwe.mitre.org/data/definitions/532.html).\n",
+   "security_severity_level": "high"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"rust\"}",
+   "category": "/language:rust",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "This operation writes secret to a log file."
+   },
+   "location": {
+    "path": "tests/hardening.rs",
+    "start_line": 132,
+    "end_line": 132,
+    "start_column": 41,
+    "end_column": 81
+   },
+   "classifications": [
+    "test"
+   ]
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/8/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ },
+ {
+  "number": 7,
+  "created_at": "2026-10-23T05:38:45Z",
+  "updated_at": "2026-10-23T05:38:46Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/7",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/7",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "js/remote-property-injection",
+   "severity": "warning",
+   "description": "Remote property injection",
+   "name": "js/remote-property-injection",
+   "tags": [
+    "external/cwe/cwe-250",
+    "external/cwe/cwe-400",
+    "security"
+   ],
+   "full_description": "Allowing writes to arbitrary properties of an object may lead to denial-of-service attacks.",
+   "help": "# Remote property injection\nDynamically computing object property names from untrusted input may have multiple undesired consequences. For example, if the property access is used as part of a write, an attacker may overwrite vital properties of objects, such as `__proto__`. This attack is known as *prototype pollution attack* and may serve as a vehicle for denial-of-service attacks. A similar attack vector, is to replace the `toString` property of an object with a primitive. Whenever `toString` is then called on that object, either explicitly or implicitly as part of a type coercion, an exception will be raised.\n\nMoreover, if the name of an HTTP header is user-controlled, an attacker may exploit this to overwrite security-critical headers such as `Access-Control-Allow-Origin` or `Content-Security-Policy`.\n\n\n## Recommendation\nThe most common case in which prototype pollution vulnerabilities arise is when JavaScript objects are used for implementing map data structures. This case should be avoided whenever possible by using the ECMAScript 2015 `Map` instead. When this is not possible, an alternative fix is to prepend untrusted input with a marker character such as `$`, before using it in properties accesses. In this way, the attacker does not have access to built-in properties which do not start with the chosen character.\n\nWhen using user input as part of a header name, a sanitization step should be performed on the input to ensure that the name does not clash with existing header names such as `Content-Security-Policy`.\n\n\n## Example\nIn the example below, the dynamically computed property `prop` is accessed on `myObj` using a user-controlled value.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = req.query.userControlled; // BAD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\nThis is not secure since an attacker may exploit this code to overwrite the property `__proto__` with an empty function. If this happens, the concatenation in the `console.log` argument will fail with a confusing message such as \"Function.prototype.toString is not generic\". If the application does not properly handle this error, this scenario may result in a serious denial-of-service attack. The fix is to prepend the user-controlled string with a marker character such as `$` which will prevent arbitrary property names from being overwritten.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = \"$\" + req.query.userControlled; // GOOD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\n\n## References\n* Prototype pollution attacks: [electron](https://github.com/electron/electron/pull/9287), [lodash](https://hackerone.com/reports/310443), [hoek](https://npmjs.com/advisories/566).\n* Penetration testing report: [ header name injection attack](http://seclists.org/pen-test/2009/Mar/67)\n* npm blog post: [ dangers of square bracket notation](https://github.com/nodesecurity/eslint-plugin-security/blob/3c7522ca1be800353513282867a1034c795d9eb4/docs/the-dangers-of-square-bracket-notation.md)\n* Common Weakness Enumeration: [CWE-250](https://cwe.mitre.org/data/definitions/250.html).\n* Common Weakness Enumeration: [CWE-400](https://cwe.mitre.org/data/definitions/400.html).\n",
+   "security_severity_level": "high"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"javascript-typescript\"}",
+   "category": "/language:javascript-typescript",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "A property name to write to depends on a user-provided value."
+   },
+   "location": {
+    "path": "ui/app.js",
+    "start_line": 89,
+    "end_line": 89,
+    "start_column": 16,
+    "end_column": 22
+   },
+   "classifications": []
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/7/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ },
+ {
+  "number": 6,
+  "created_at": "2026-10-23T05:38:45Z",
+  "updated_at": "2026-10-23T05:38:46Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/6",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/6",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "js/remote-property-injection",
+   "severity": "warning",
+   "description": "Remote property injection",
+   "name": "js/remote-property-injection",
+   "tags": [
+    "external/cwe/cwe-250",
+    "external/cwe/cwe-400",
+    "security"
+   ],
+   "full_description": "Allowing writes to arbitrary properties of an object may lead to denial-of-service attacks.",
+   "help": "# Remote property injection\nDynamically computing object property names from untrusted input may have multiple undesired consequences. For example, if the property access is used as part of a write, an attacker may overwrite vital properties of objects, such as `__proto__`. This attack is known as *prototype pollution attack* and may serve as a vehicle for denial-of-service attacks. A similar attack vector, is to replace the `toString` property of an object with a primitive. Whenever `toString` is then called on that object, either explicitly or implicitly as part of a type coercion, an exception will be raised.\n\nMoreover, if the name of an HTTP header is user-controlled, an attacker may exploit this to overwrite security-critical headers such as `Access-Control-Allow-Origin` or `Content-Security-Policy`.\n\n\n## Recommendation\nThe most common case in which prototype pollution vulnerabilities arise is when JavaScript objects are used for implementing map data structures. This case should be avoided whenever possible by using the ECMAScript 2015 `Map` instead. When this is not possible, an alternative fix is to prepend untrusted input with a marker character such as `$`, before using it in properties accesses. In this way, the attacker does not have access to built-in properties which do not start with the chosen character.\n\nWhen using user input as part of a header name, a sanitization step should be performed on the input to ensure that the name does not clash with existing header names such as `Content-Security-Policy`.\n\n\n## Example\nIn the example below, the dynamically computed property `prop` is accessed on `myObj` using a user-controlled value.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = req.query.userControlled; // BAD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\nThis is not secure since an attacker may exploit this code to overwrite the property `__proto__` with an empty function. If this happens, the concatenation in the `console.log` argument will fail with a confusing message such as \"Function.prototype.toString is not generic\". If the application does not properly handle this error, this scenario may result in a serious denial-of-service attack. The fix is to prepend the user-controlled string with a marker character such as `$` which will prevent arbitrary property names from being overwritten.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = \"$\" + req.query.userControlled; // GOOD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\n\n## References\n* Prototype pollution attacks: [electron](https://github.com/electron/electron/pull/9287), [lodash](https://hackerone.com/reports/310443), [hoek](https://npmjs.com/advisories/566).\n* Penetration testing report: [ header name injection attack](http://seclists.org/pen-test/2009/Mar/67)\n* npm blog post: [ dangers of square bracket notation](https://github.com/nodesecurity/eslint-plugin-security/blob/3c7522ca1be800353513282867a1034c795d9eb4/docs/the-dangers-of-square-bracket-notation.md)\n* Common Weakness Enumeration: [CWE-250](https://cwe.mitre.org/data/definitions/250.html).\n* Common Weakness Enumeration: [CWE-400](https://cwe.mitre.org/data/definitions/400.html).\n",
+   "security_severity_level": "high"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"javascript-typescript\"}",
+   "category": "/language:javascript-typescript",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "A property name to write to depends on a user-provided value."
+   },
+   "location": {
+    "path": "ui/app.js",
+    "start_line": 77,
+    "end_line": 77,
+    "start_column": 33,
+    "end_column": 39
+   },
+   "classifications": []
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/6/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ },
+ {
+  "number": 5,
+  "created_at": "2026-10-23T05:38:45Z",
+  "updated_at": "2026-10-23T05:38:46Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/5",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/5",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "js/remote-property-injection",
+   "severity": "warning",
+   "description": "Remote property injection",
+   "name": "js/remote-property-injection",
+   "tags": [
+    "external/cwe/cwe-250",
+    "external/cwe/cwe-400",
+    "security"
+   ],
+   "full_description": "Allowing writes to arbitrary properties of an object may lead to denial-of-service attacks.",
+   "help": "# Remote property injection\nDynamically computing object property names from untrusted input may have multiple undesired consequences. For example, if the property access is used as part of a write, an attacker may overwrite vital properties of objects, such as `__proto__`. This attack is known as *prototype pollution attack* and may serve as a vehicle for denial-of-service attacks. A similar attack vector, is to replace the `toString` property of an object with a primitive. Whenever `toString` is then called on that object, either explicitly or implicitly as part of a type coercion, an exception will be raised.\n\nMoreover, if the name of an HTTP header is user-controlled, an attacker may exploit this to overwrite security-critical headers such as `Access-Control-Allow-Origin` or `Content-Security-Policy`.\n\n\n## Recommendation\nThe most common case in which prototype pollution vulnerabilities arise is when JavaScript objects are used for implementing map data structures. This case should be avoided whenever possible by using the ECMAScript 2015 `Map` instead. When this is not possible, an alternative fix is to prepend untrusted input with a marker character such as `$`, before using it in properties accesses. In this way, the attacker does not have access to built-in properties which do not start with the chosen character.\n\nWhen using user input as part of a header name, a sanitization step should be performed on the input to ensure that the name does not clash with existing header names such as `Content-Security-Policy`.\n\n\n## Example\nIn the example below, the dynamically computed property `prop` is accessed on `myObj` using a user-controlled value.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = req.query.userControlled; // BAD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\nThis is not secure since an attacker may exploit this code to overwrite the property `__proto__` with an empty function. If this happens, the concatenation in the `console.log` argument will fail with a confusing message such as \"Function.prototype.toString is not generic\". If the application does not properly handle this error, this scenario may result in a serious denial-of-service attack. The fix is to prepend the user-controlled string with a marker character such as `$` which will prevent arbitrary property names from being overwritten.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = \"$\" + req.query.userControlled; // GOOD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\n\n## References\n* Prototype pollution attacks: [electron](https://github.com/electron/electron/pull/9287), [lodash](https://hackerone.com/reports/310443), [hoek](https://npmjs.com/advisories/566).\n* Penetration testing report: [ header name injection attack](http://seclists.org/pen-test/2009/Mar/67)\n* npm blog post: [ dangers of square bracket notation](https://github.com/nodesecurity/eslint-plugin-security/blob/3c7522ca1be800353513282867a1034c795d9eb4/docs/the-dangers-of-square-bracket-notation.md)\n* Common Weakness Enumeration: [CWE-250](https://cwe.mitre.org/data/definitions/250.html).\n* Common Weakness Enumeration: [CWE-400](https://cwe.mitre.org/data/definitions/400.html).\n",
+   "security_severity_level": "high"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"javascript-typescript\"}",
+   "category": "/language:javascript-typescript",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "A property name to write to depends on a user-provided value."
+   },
+   "location": {
+    "path": "ui/app.js",
+    "start_line": 54,
+    "end_line": 54,
+    "start_column": 33,
+    "end_column": 39
+   },
+   "classifications": []
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/5/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ },
+ {
+  "number": 4,
+  "created_at": "2026-10-23T05:38:45Z",
+  "updated_at": "2026-10-23T05:38:46Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/4",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/4",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "js/remote-property-injection",
+   "severity": "warning",
+   "description": "Remote property injection",
+   "name": "js/remote-property-injection",
+   "tags": [
+    "external/cwe/cwe-250",
+    "external/cwe/cwe-400",
+    "security"
+   ],
+   "full_description": "Allowing writes to arbitrary properties of an object may lead to denial-of-service attacks.",
+   "help": "# Remote property injection\nDynamically computing object property names from untrusted input may have multiple undesired consequences. For example, if the property access is used as part of a write, an attacker may overwrite vital properties of objects, such as `__proto__`. This attack is known as *prototype pollution attack* and may serve as a vehicle for denial-of-service attacks. A similar attack vector, is to replace the `toString` property of an object with a primitive. Whenever `toString` is then called on that object, either explicitly or implicitly as part of a type coercion, an exception will be raised.\n\nMoreover, if the name of an HTTP header is user-controlled, an attacker may exploit this to overwrite security-critical headers such as `Access-Control-Allow-Origin` or `Content-Security-Policy`.\n\n\n## Recommendation\nThe most common case in which prototype pollution vulnerabilities arise is when JavaScript objects are used for implementing map data structures. This case should be avoided whenever possible by using the ECMAScript 2015 `Map` instead. When this is not possible, an alternative fix is to prepend untrusted input with a marker character such as `$`, before using it in properties accesses. In this way, the attacker does not have access to built-in properties which do not start with the chosen character.\n\nWhen using user input as part of a header name, a sanitization step should be performed on the input to ensure that the name does not clash with existing header names such as `Content-Security-Policy`.\n\n\n## Example\nIn the example below, the dynamically computed property `prop` is accessed on `myObj` using a user-controlled value.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = req.query.userControlled; // BAD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\nThis is not secure since an attacker may exploit this code to overwrite the property `__proto__` with an empty function. If this happens, the concatenation in the `console.log` argument will fail with a confusing message such as \"Function.prototype.toString is not generic\". If the application does not properly handle this error, this scenario may result in a serious denial-of-service attack. The fix is to prepend the user-controlled string with a marker character such as `$` which will prevent arbitrary property names from being overwritten.\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\nvar myObj = {}\n\napp.get('/user/:id', function(req, res) {\n\tvar prop = \"$\" + req.query.userControlled; // GOOD\n\tmyObj[prop] = function() {};\n\tconsole.log(\"Request object \" + myObj);\n});\n```\n\n## References\n* Prototype pollution attacks: [electron](https://github.com/electron/electron/pull/9287), [lodash](https://hackerone.com/reports/310443), [hoek](https://npmjs.com/advisories/566).\n* Penetration testing report: [ header name injection attack](http://seclists.org/pen-test/2009/Mar/67)\n* npm blog post: [ dangers of square bracket notation](https://github.com/nodesecurity/eslint-plugin-security/blob/3c7522ca1be800353513282867a1034c795d9eb4/docs/the-dangers-of-square-bracket-notation.md)\n* Common Weakness Enumeration: [CWE-250](https://cwe.mitre.org/data/definitions/250.html).\n* Common Weakness Enumeration: [CWE-400](https://cwe.mitre.org/data/definitions/400.html).\n",
+   "security_severity_level": "high"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"javascript-typescript\"}",
+   "category": "/language:javascript-typescript",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "A property name to write to depends on a user-provided value."
+   },
+   "location": {
+    "path": "ui/app.js",
+    "start_line": 46,
+    "end_line": 46,
+    "start_column": 38,
+    "end_column": 44
+   },
+   "classifications": []
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/4/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ },
+ {
+  "number": 3,
+  "created_at": "2026-10-23T05:34:51Z",
+  "updated_at": "2026-10-23T05:34:51Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/3",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/3",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "actions/untrusted-checkout/medium",
+   "severity": "warning",
+   "description": "Checkout of untrusted code in a non-privileged context",
+   "name": "actions/untrusted-checkout/medium",
+   "tags": [
+    "actions",
+    "external/cwe/cwe-829",
+    "security"
+   ],
+   "full_description": "Checking out and running the build script from a fork executes untrusted code. Even in a non-privileged workflow, this can be abused, for example to compromise self-hosted runners or to poison caches and artifacts that are later consumed by privileged workflows.",
+   "help": "## Overview\n\nGitHub workflows can be triggered through various repository events, including incoming pull requests (PRs) or comments on Issues/PRs. Under certain conditions described below, attackers can take over a repository by opening malicious PRs from forks. The attacks can result in malicious code execution causing unauthorized changes to the repository or exfiltration of repository secrets and a compromise of connected systems.\n\n## Workflow Security Model\n\nIn GitHub Actions, there is a distinction between unprivileged and privileged workflows. For example, a workflow with a `pull_request` trigger is unprivileged while a workflow with `pull_request_target` is privileged.\n\nThis is relevant especially for PRs from forks. Normal PRs can only be submitted by people who have write access to a repository, while PRs from forks can be submitted by anyone.\n\nOn a PR from a fork, an unprivileged `pull_request` workflow has only limited capabilities but a privileged `pull_request_target` workflow is much more dangerous. A privileged workflow:\n\n  * Runs in the context of the base repository\n  * Has access to organization and repository secrets (e.g., API keys, deployment tokens)\n  * Has a read/write `GITHUB_TOKEN` by default\n  * Can access private resources\n\nCertain triggers automatically grant a workflow elevated privileges:\n\n  * `pull_request_target` as described above\n  * `workflow_run`: Triggered when another workflow completes.\n  * `issue_comment`: Triggered when a comment is made on an issue or PR.\n\n## Attack Details\n\n  * A repository has a privileged workflow\n  * An attacker forks the repository and adds malicious code (e.g., in the build script)\n  * The attacker opens a PR from the fork, and, if needed, comments on the PR\n  * The workflow in the base repository checks out the forked code\n  * The workflow runs the malicious code\n\nPlease note that not only build scripts can be malicious code vectors. There is a large number of other possibilities. Some of them are listed in the [LOTP](https://boostsecurityio.github.io/lotp/) catalog.\n\n## Recommendation\n\n- Avoid using `pull_request_target` unless necessary.\n- Employ unprivileged `pull_request` workflows followed by `workflow_run` for privileged operations.\n- Use labels like `safe to test` to vet PRs and manage the execution context appropriately.\n\nThe best practice is to handle the potentially untrusted pull request via the **pull_request** trigger so that it is isolated in an unprivileged environment. The workflow processing the pull request should then store any results like code coverage or failed/passed tests in artifacts and exit. A second privileged workflow with the access to repository secrets, triggered by the completion of the first workflow using `workflow_run` trigger event, downloads the artifacts and make any necessary modifications to the repository or interact with third party services that require repository secrets (e.g. API tokens).\n\nThe artifacts downloaded from the first workflow should be considered untrusted and must be verified.\n\nAdditionally, ensure that least privilege are used both at the workflow level (through event triggers and workflow permissions) and job level (through job permissions).\n\n## Example\n\n### Incorrect Usage\n\nThe following workflow checks-out untrusted code in a privileged context and runs user-controlled code (in this case package.json scripts) which will grant privileged access to the attacker:\n\n```yaml\non: pull_request_target\n\njobs:\n  build:\n    name: Build and test\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v2\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n\n      - uses: actions/setup-node@v1\n      - run: |\n          npm install # scripts in package.json from PR would be executed here\n          npm build\n\n      - uses: completely/fakeaction@v2\n        with:\n          arg1: ${{ secrets.supersecret }}\n\n      - uses: fakerepo/comment-on-pr@v1\n        with:\n          message: |\n            Thank you!\n```\n\n### Correct Usage\n\nAn example shows how to use two workflows: one for processing the untrusted PR and the other for using the results in a safe context.\n\n**ReceivePR.yml** (untrusted PR handling with artifact creation):\n\n```yaml\nname: Receive PR\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v2\n      - name: Build\n        run: /bin/bash ./build.sh\n      - name: Save PR number\n        run: |\n          mkdir -p ./pr\n          echo ${{ github.event.number }} > ./pr/NR\n      - uses: actions/upload-artifact@v2\n        with:\n          name: pr\n          path: pr/\n```\n\n**CommentPR.yml** (processing artifacts with privileged access):\n\n```yaml\nname: Comment on the pull request\non:\n  workflow_run:\n    workflows: [\"Receive PR\"]\n    types:\n      - completed\njobs:\n  upload:\n    runs-on: ubuntu-latest\n    if: >\n      github.event.workflow_run.event == 'pull_request' &&\n      github.event.workflow_run.conclusion == 'success'\n    steps:\n      - name: \"Download artifact\"\n        uses: actions/github-script@v3.1.0\n        with:\n          script: |\n            var artifacts = await github.actions.listWorkflowRunArtifacts({\n                owner: context.repo.owner,\n                repo: context.repo.repo,\n                run_id: ${{github.event.workflow_run.id }},\n            });\n            var matchArtifact = artifacts.data.artifacts.filter((artifact) => {\n              return artifact.name == \"pr\";\n            })[0];\n            var download = await github.actions.downloadArtifact({\n                owner: context.repo.owner,\n                repo: context.repo.repo,\n                artifact_id: matchArtifact.id,\n                archive_format: 'zip',\n            });\n            var fs = require('fs');\n            fs.writeFileSync('${{github.workspace}}/pr.zip', Buffer.from(download.data));\n      - run: |\n          mkdir -p tmp\n          unzip -d tmp/ pr.zip\n      - name: \"Comment on PR\"\n        uses: actions/github-script@v3\n        with:\n          github-token: ${{ secrets.GITHUB_TOKEN }}\n          script: |\n            var fs = require('fs');\n            var issue_number = Number(fs.readFileSync('./tmp/NR'));\n            // Verify that the file contains a numeric value\n            const contains_numeric = /\\d/.test(issue_number);\n            if (contains_numeric) {\n                await github.issues.createComment({\n                  owner: context.repo.owner,\n                  repo: context.repo.repo,\n                  issue_number: issue_number,\n                  body: 'Everything is OK. Thank you for the PR!'\n                });\n            }\n```\n\n## References\n\n- GitHub Security Lab Research: [Keeping your GitHub Actions and workflows secure Part 1: Preventing pwn requests](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/).\n- Mitigating risks of untrusted checkout: [GitHub Docs](https://docs.github.com/en/enterprise-cloud@latest/actions/reference/security/secure-use#mitigating-the-risks-of-untrusted-code-checkout).\n- Securing with least privilege: [Workflow secure use](https://docs.github.com/en/actions/reference/security/secure-use).\n- Living Off the Pipeline: [LOTP](https://boostsecurityio.github.io/lotp/).\n",
+   "security_severity_level": "medium"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"actions\"}",
+   "category": "/language:actions",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "Potential unsafe checkout of untrusted pull request on non-privileged workflow."
+   },
+   "location": {
+    "path": ".github/workflows/ci.yml",
+    "start_line": 152,
+    "end_line": 158,
+    "start_column": 9,
+    "end_column": 7
+   },
+   "classifications": []
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/3/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ },
+ {
+  "number": 2,
+  "created_at": "2026-10-23T05:34:51Z",
+  "updated_at": "2026-10-23T05:34:51Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/2",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/2",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "actions/cache-poisoning/poisonable-step",
+   "severity": "error",
+   "description": "Cache Poisoning via execution of untrusted code",
+   "name": "actions/cache-poisoning/poisonable-step",
+   "tags": [
+    "actions",
+    "external/cwe/cwe-349",
+    "security"
+   ],
+   "full_description": "The cache can be poisoned by untrusted code, leading to a cache poisoning attack.",
+   "help": "## Overview\n\nGitHub Actions cache poisoning is a technique that allows an attacker to inject malicious content into the Action's cache from unprivileged workflow, potentially leading to code execution in privileged workflows.\n\nAn attacker with the ability to run code in the context of the default branch (e.g. through Code Injection or Execution of Untrusted Code) can exploit this to:\n\n1. Steal the cache access token and URL.\n2. Overflow the cache to trigger eviction of legitimate entries.\n3. Poison cache entries with malicious payloads.\n4. Achieve code execution in privileged workflows that restore the poisoned cache.\n\nThis allows lateral movement from low-privileged to high-privileged workflows within a repository.\n\n### Cache Structure\n\nIn GitHub Actions, cache scopes are primarily determined by the branch structure. Branches are considered the main security boundary for GitHub Actions caching. This means that cache entries are generally scoped to specific branches.\n\n- **Access to Parent Branch Caches**: Feature branches (or child branches) created off of a parent branch (like `main` or `dev`) can access caches from the parent branch. For instance, a feature branch off of `main` will be able to access the cache from `main`.\n\n- **Sibling Branches**: Sibling branches, meaning branches that are created from the same parent but not from each other, do not share caches. For example, two branches created off of `main` will not be able to access each other\u2019s caches directly.\n\nDue to the above design, if something is cached in the context of the default branch (e.g., `main`), it becomes accessible to any feature branch derived from `main`.\n\n## Recommendation\n\n1. Avoid using caching in workflows that handle sensitive operations like releases.\n2. If caching must be used:\n   - Validate restored cache contents before use.\n   - Use short-lived, workflow-specific cache keys.\n   - Clear caches regularly.\n3. Implement strict isolation between untrusted and privileged workflow execution.\n4. Never run untrusted code in the context of the default branch.\n5. Sign the cache value cryptographically and verify the signature before usage.\n\n## Example\n\nGitHub gives workflows triggered by low-trust events, such as `issue_comment`,\n`pull_request_target`, and `workflow_run`, read-only access to the default branch cache scope.\nThis query therefore reports only workflows whose trigger can write to that scope.\n\n### Incorrect Usage\n\nThe following write-capable manually dispatched workflow fetches an unvalidated revision and then\nexecutes code from it. The executed code can use the cache token to poison the default branch cache\nif an untrusted integration or automation can influence the dispatch input.\n\n```yaml\nname: Vulnerable Workflow\non:\n  workflow_dispatch:\n    inputs:\n      head_sha:\n        required: true\njobs:\n  test:\n    permissions: {}\n    runs-on: ubuntu-latest\n    steps:\n      - env:\n          HEAD_SHA: ${{ github.event.inputs.head_sha }}\n        run: |\n          git fetch origin \"$HEAD_SHA\"\n          git checkout \"$HEAD_SHA\"\n      - name: Run tests\n        run: npm install\n```\n\n### Correct Usage\n\nThe following workflow runs untrusted code in a non-privileged job and the cache is scoped to the Pull Request branch.\n\n```yaml\nname: Secure Workflow\non:\n  pull_request:\n    branches: [main]\npermissions: {}\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n      - name: Run tests\n        run: ./run_tests.sh\n```\n\n## References\n\n- Adnan Khan's Blog: [The Monsters in Your Build Cache \u2013 GitHub Actions Cache Poisoning](https://adnanthekhan.com/2024/05/06/the-monsters-in-your-build-cache-github-actions-cache-poisoning/).\n- GitHub Docs: [Cache access for low-trust workflow triggers](https://docs.github.com/actions/reference/workflows-and-actions/dependency-caching#cache-access-for-low-trust-workflow-triggers).\n- Scribe Security Blog: [Cache Poisoning in GitHub Actions](https://scribesecurity.com/blog/github-cache-poisoning/).\n",
+   "security_severity_level": "high"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"actions\"}",
+   "category": "/language:actions",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "Potential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from steps.node.outputs.branch. (workflow_dispatch)."
+   },
+   "location": {
+    "path": ".github/workflows/ci.yml",
+    "start_line": 206,
+    "end_line": 208,
+    "start_column": 9,
+    "end_column": 7
+   },
+   "classifications": []
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/2/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ },
+ {
+  "number": 1,
+  "created_at": "2026-10-23T05:34:51Z",
+  "updated_at": "2026-10-23T05:34:51Z",
+  "url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/1",
+  "html_url": "https://github.com/boyfromcave/chain-viz/security/code-scanning/1",
+  "state": "open",
+  "fixed_at": null,
+  "dismissed_by": null,
+  "dismissed_at": null,
+  "dismissed_reason": null,
+  "dismissed_comment": null,
+  "rule": {
+   "id": "actions/cache-poisoning/poisonable-step",
+   "severity": "error",
+   "description": "Cache Poisoning via execution of untrusted code",
+   "name": "actions/cache-poisoning/poisonable-step",
+   "tags": [
+    "actions",
+    "external/cwe/cwe-349",
+    "security"
+   ],
+   "full_description": "The cache can be poisoned by untrusted code, leading to a cache poisoning attack.",
+   "help": "## Overview\n\nGitHub Actions cache poisoning is a technique that allows an attacker to inject malicious content into the Action's cache from unprivileged workflow, potentially leading to code execution in privileged workflows.\n\nAn attacker with the ability to run code in the context of the default branch (e.g. through Code Injection or Execution of Untrusted Code) can exploit this to:\n\n1. Steal the cache access token and URL.\n2. Overflow the cache to trigger eviction of legitimate entries.\n3. Poison cache entries with malicious payloads.\n4. Achieve code execution in privileged workflows that restore the poisoned cache.\n\nThis allows lateral movement from low-privileged to high-privileged workflows within a repository.\n\n### Cache Structure\n\nIn GitHub Actions, cache scopes are primarily determined by the branch structure. Branches are considered the main security boundary for GitHub Actions caching. This means that cache entries are generally scoped to specific branches.\n\n- **Access to Parent Branch Caches**: Feature branches (or child branches) created off of a parent branch (like `main` or `dev`) can access caches from the parent branch. For instance, a feature branch off of `main` will be able to access the cache from `main`.\n\n- **Sibling Branches**: Sibling branches, meaning branches that are created from the same parent but not from each other, do not share caches. For example, two branches created off of `main` will not be able to access each other\u2019s caches directly.\n\nDue to the above design, if something is cached in the context of the default branch (e.g., `main`), it becomes accessible to any feature branch derived from `main`.\n\n## Recommendation\n\n1. Avoid using caching in workflows that handle sensitive operations like releases.\n2. If caching must be used:\n   - Validate restored cache contents before use.\n   - Use short-lived, workflow-specific cache keys.\n   - Clear caches regularly.\n3. Implement strict isolation between untrusted and privileged workflow execution.\n4. Never run untrusted code in the context of the default branch.\n5. Sign the cache value cryptographically and verify the signature before usage.\n\n## Example\n\nGitHub gives workflows triggered by low-trust events, such as `issue_comment`,\n`pull_request_target`, and `workflow_run`, read-only access to the default branch cache scope.\nThis query therefore reports only workflows whose trigger can write to that scope.\n\n### Incorrect Usage\n\nThe following write-capable manually dispatched workflow fetches an unvalidated revision and then\nexecutes code from it. The executed code can use the cache token to poison the default branch cache\nif an untrusted integration or automation can influence the dispatch input.\n\n```yaml\nname: Vulnerable Workflow\non:\n  workflow_dispatch:\n    inputs:\n      head_sha:\n        required: true\njobs:\n  test:\n    permissions: {}\n    runs-on: ubuntu-latest\n    steps:\n      - env:\n          HEAD_SHA: ${{ github.event.inputs.head_sha }}\n        run: |\n          git fetch origin \"$HEAD_SHA\"\n          git checkout \"$HEAD_SHA\"\n      - name: Run tests\n        run: npm install\n```\n\n### Correct Usage\n\nThe following workflow runs untrusted code in a non-privileged job and the cache is scoped to the Pull Request branch.\n\n```yaml\nname: Secure Workflow\non:\n  pull_request:\n    branches: [main]\npermissions: {}\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n      - name: Run tests\n        run: ./run_tests.sh\n```\n\n## References\n\n- Adnan Khan's Blog: [The Monsters in Your Build Cache \u2013 GitHub Actions Cache Poisoning](https://adnanthekhan.com/2024/05/06/the-monsters-in-your-build-cache-github-actions-cache-poisoning/).\n- GitHub Docs: [Cache access for low-trust workflow triggers](https://docs.github.com/actions/reference/workflows-and-actions/dependency-caching#cache-access-for-low-trust-workflow-triggers).\n- Scribe Security Blog: [Cache Poisoning in GitHub Actions](https://scribesecurity.com/blog/github-cache-poisoning/).\n",
+   "security_severity_level": "high"
+  },
+  "tool": {
+   "name": "CodeQL",
+   "guid": null,
+   "version": "2.27.3"
+  },
+  "most_recent_instance": {
+   "ref": "refs/heads/upgrade/vault",
+   "analysis_key": ".github/workflows/codeql.yml:analyze",
+   "environment": "{\"language\":\"actions\"}",
+   "category": "/language:actions",
+   "state": "open",
+   "commit_sha": "9b48ef60eeac6ab1971ab37fb11bebee6ad585ca",
+   "message": {
+    "text": "Potential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from steps.node.outputs.branch. (workflow_dispatch)."
+   },
+   "location": {
+    "path": ".github/workflows/ci.yml",
+    "start_line": 192,
+    "end_line": 199,
+    "start_column": 9,
+    "end_column": 7
+   },
+   "classifications": []
+  },
+  "instances_url": "https://api.github.com/repos/boyfromcave/chain-viz/code-scanning/alerts/1/instances",
+  "dismissal_approved_by": null,
+  "assignees": [],
+  "linked_pull_requests": [],
+  "linked_issues": []
+ }
+]
