@@ -23,7 +23,7 @@ export const store = {
   reorgs: [],            // reorg events, newest first
   rejected: new Set(),   // block hashes some node refused as YED-invalid
   disagreeSince: {},     // node id → wall-clock when it last started disagreeing
-  yb: {},                // txid → yb fields seen in yb_tx events (mempool colouring)
+  yb: new Map(),         // txid → yb fields seen in yb_tx events (mempool colouring); a Map, so no event key reaches an object's properties
   dirty: true,
 };
 const MAX_EVENTS = 500;
@@ -43,7 +43,7 @@ export function applyEvent(e, historical = false) {
   if (historical) {   // the server's backlog from before this page opened: logs only, the snapshot already reflects it
     if (e.kind === 'reorg') store.reorgs.push(e);
     if (e.kind === 'rejected_block') store.rejected.add(e.hash);
-    if (e.kind === 'yb_tx') store.yb[e.txid] = { type: e.type, verdict: e.verdict, feeZat: e.feeZat, payee: e.payee };
+    if (e.kind === 'yb_tx') store.yb.set(e.txid, { type: e.type, verdict: e.verdict, feeZat: e.feeZat, payee: e.payee });
     store.dirty = true;
     return;
   }
@@ -51,7 +51,7 @@ export function applyEvent(e, historical = false) {
   if (!s) return;
   switch (e.kind) {
     case 'tip':
-      if (e.node) s.chain.heads[e.node] = { height: e.height, hash: e.hash };
+      { const id = knownNode(e.node); if (id) s.chain.heads[id] = { height: e.height, hash: e.hash }; }
       touchNode(e.node, e.ts);
       break;
     case 'block': {
@@ -74,8 +74,8 @@ export function applyEvent(e, historical = false) {
     case 'mempool_add': {
       let t = s.mempool.txs.find((x) => x.txid === e.txid);
       if (!t) { t = { txid: e.txid, size: e.size, fee: e.fee, time: e.time, firstSeen: {}, present: [], depends: e.depends || [] }; s.mempool.txs.push(t); }
-      if (e.node) { t.firstSeen[e.node] ??= e.ts; if (!t.present.includes(e.node)) t.present.push(e.node); }
-      if (store.yb[e.txid]) t.yb = store.yb[e.txid];
+      { const id = knownNode(e.node); if (id) { t.firstSeen[id] ??= e.ts; if (!t.present.includes(id)) t.present.push(id); } }
+      if (store.yb.has(e.txid)) t.yb = store.yb.get(e.txid);
       recountMempool(); scheduleRefresh();
       break;
     }
@@ -86,8 +86,9 @@ export function applyEvent(e, historical = false) {
       break;
     }
     case 'yb_tx': {
-      store.yb[e.txid] = { type: e.type, verdict: e.verdict, feeZat: e.feeZat, payee: e.payee };
-      const t = s.mempool.txs.find((x) => x.txid === e.txid); if (t) t.yb = store.yb[e.txid];
+      const yb = { type: e.type, verdict: e.verdict, feeZat: e.feeZat, payee: e.payee };
+      store.yb.set(e.txid, yb);
+      const t = s.mempool.txs.find((x) => x.txid === e.txid); if (t) t.yb = yb;
       break;
     }
     case 'devnet_heartbeat': s.devnet.heartbeat = stripEnvelope(e); break;
@@ -99,6 +100,13 @@ export function applyEvent(e, historical = false) {
 }
 
 function stripEnvelope(e) { const v = { ...e }; delete v.seq; delete v.ts; delete v.kind; delete v.node; delete v.height; return v; }
+// An event's node id is used as a property name (chain.heads, a tx's firstSeen) only when it is one of
+// the snapshot's configured nodes; the id written is the snapshot's own string, never the event's.
+function knownNode(id) {
+  if (!id) return null;
+  const n = store.snap?.nodes?.find((x) => x.id === id);
+  return n ? n.id : null;
+}
 function touchNode(id, ts, up = true) {
   const n = store.snap.nodes.find((x) => x.id === id); if (!n) return;
   n.lastSeen = ts; if (up !== undefined) n.up = up;
@@ -135,7 +143,7 @@ async function loadSnapshot() {
   const r = await fetch('/api/snapshot'); if (!r.ok) throw new Error(`snapshot ${r.status}`);
   const snap = await r.json();
   for (const b of [...snap.chain.main, ...snap.chain.side]) if (store.rejected.has(b.hash)) b.rejected = true;
-  for (const t of snap.mempool.txs) if (!t.yb && store.yb[t.txid]) t.yb = store.yb[t.txid];
+  for (const t of snap.mempool.txs) if (!t.yb && store.yb.has(t.txid)) t.yb = store.yb.get(t.txid);
   store.snap = snap;
   if (snap.seq > store.seq) store.seq = snap.seq;
   store.dirty = true;
