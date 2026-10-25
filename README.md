@@ -496,10 +496,15 @@ running instance and fails on a rising RSS, an uneven rate or RPC-failure notes.
 Ubuntu and macOS with the pinned Rust release on every push and pull request, plus
 `cargo deny check` (`deny.toml`: RustSec advisories and yanked crates, licence allow-list,
 crates.io as the only source) and `cargo audit`; every action is pinned to a commit SHA and
-the workflow token is read-only except in the release job. A `v*` tag also builds
-release binaries for linux x86_64 and macOS arm64 and attaches them to the GitHub release. The
-node's nightly (`ycash-dd/.github/workflows/yellowback-tests.yml`) checks out and builds this
-repository and runs `qa/rpc-tests/yellowback_chainviz.py` against it on a 3-node regtest.
+the workflow token is read-only. A `v*` tag runs `.github/workflows/release.yml`, which builds
+release binaries for linux x86_64 and macOS arm64 and attaches them to the GitHub release (only
+its publish job can write). A dispatch with `tier=nightly` adds the `devnet` job: a five-node
+regtest devnet of the node line matching the branch, with chain-viz and the UI smoke
+(`qa/ui-smoke.mjs`); its `ycashd` comes only from a push, schedule or dispatch run of that node
+branch's `yellowback-tests` (never a pull-request run), and it saves no cache. Security scanning
+is in [SECURITY-CI.md](SECURITY-CI.md). The node's nightly
+(`ycash-dd/.github/workflows/yellowback-tests.yml`) checks out and builds this repository at a
+pinned commit and runs `qa/rpc-tests/yellowback_chainviz.py` against it on a 3-node regtest.
 
 ## Findings
 
