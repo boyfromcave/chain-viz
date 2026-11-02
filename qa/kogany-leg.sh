@@ -6,7 +6,7 @@
 # The kogany leg (workspace kogany plan W9-c; report-only): chain-viz, polling (kogany has no ZMQ
 # and no -blocknotify, kogany plan K-17), with a regtest kogany node as its only node.
 #   qa/kogany-leg.sh
-# env: ZAKURAD (kogany's zakurad --features ycash: kogany's zakurad-bin artifact), YCASHD (ycash6's
+# env: KOGANYD (kogany's koganyd --features ycash: kogany's koganyd-bin artifact), YCASHD (ycash6's
 #      ycashd: ycash6's node-bin), CHAINVIZ_BIN (default target/release/chain-viz), KOGANY_RIG_DIR
 #      (default a temporary directory), PYTHON (default python3), NODE (default node), CV_PORT
 #      (default 8494), CV_LEG_NODE (kogany, default; or sidecar: the same checks with the ycash6
@@ -20,7 +20,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${PYTHON:-python3}"
-: "${ZAKURAD:?ZAKURAD: kogany zakurad (--features ycash)}"
+# ZAKURAD: the variable's name before kogany's daemon became koganyd (kogany dd834da8b).
+KOGANYD="${KOGANYD:-${ZAKURAD:-}}"
+: "${KOGANYD:?KOGANYD: kogany koganyd (--features ycash)}"
 : "${YCASHD:?YCASHD: ycash6 ycashd}"
 CV="${CHAINVIZ_BIN:-$ROOT/target/release/chain-viz}"
 DIR="${KOGANY_RIG_DIR:-$(mktemp -d)/rig}"
@@ -29,7 +31,7 @@ rig() { "$PY" "$ROOT/qa/kogany-rig.py" --dir "$DIR" "$@"; }
 cvpid=
 cleanup() { [ -n "$cvpid" ] && kill "$cvpid" 2>/dev/null; rig down || true; }
 trap cleanup EXIT
-rig up --zakurad "$ZAKURAD" --ycashd "$YCASHD"
+rig up --koganyd "$KOGANYD" --ycashd "$YCASHD"
 case "${CV_LEG_NODE:-kogany}" in
   kogany) IDX=1 ;; sidecar) IDX=0 ;; *) echo "kogany-leg: CV_LEG_NODE is kogany or sidecar" >&2; exit 2 ;;
 esac
