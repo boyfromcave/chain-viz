@@ -5,7 +5,7 @@
 
 """The kogany client rig (workspace kogany plan W9-c): a regtest kogany node and its ycash6 test rig.
 
-kogany (`zakurad`, built with `--features ycash`) is wallet-less (kogany plan K-3): it serves the
+kogany (`koganyd`, built with `--features ycash`) is wallet-less (kogany plan K-3): it serves the
 read and node-state RPCs, never solves Equihash and holds no keys. The rig therefore pairs it with
 a ycash6 `ycashd` sidecar (`connect=` kogany, `listen=0`: kogany is its only peer), the test rig of
 plan W9-a: the sidecar's wallet funds and signs, its `generate` mines, and every block and every
@@ -14,14 +14,14 @@ is pointed at kogany (and only at the sidecar for what needs a wallet), so its r
 kogany. Stdlib only; one file, kept identical in every client repository that uses it (lightwalletd-dd,
 chain-viz, x402-ycash, yew, hawkeye).
 
-    kogany-rig.py up --zakurad Z --ycashd Y --dir D [--vault 110] [--blocks N]
+    kogany-rig.py up --koganyd Z --ycashd Y --dir D [--vault 110] [--blocks N]
                      [--lightwalletd LWD [--lightwalletd-sidecar]] [--port-base P]
     kogany-rig.py mine N [POOL]         sync the mempools, generate N on the sidecar, wait for kogany
     kogany-rig.py cli --node I -- METHOD [ARGS...]   node 0 = the sidecar, any other = kogany
     kogany-rig.py price P                no-op (the rig has no quoting pools); accepted for tools
                                          that drive yellowback-devnet
     kogany-rig.py status | down
-    kogany-rig.py follow --zakurad Z --dir D --peer-p2p PORT --peer-rpc URL [--vault 110] -- CMD...
+    kogany-rig.py follow --koganyd Z --dir D --peer-p2p PORT --peer-rpc URL [--vault 110] -- CMD...
 
 `--dir` (or `KOGANY_RIG_DIR`, or `YELLOWBACK_DEVNET_DIR`, so a test written against the
 yellowback-devnet tool can drive the rig unchanged) holds `rig.json`: the ports, the processes and
@@ -155,7 +155,7 @@ def spawn(argv, log, env=None):
     return subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT, env=env, start_new_session=True)
 
 
-def zakurad_toml(root, ports, peers, vault, attestor_set):
+def koganyd_toml(root, ports, peers, vault, attestor_set):
     heights = '\n'.join(['%s = 1' % k for k in ACTIVATION_KEYS] + ['Vault = %d' % vault])
     return '''[network]
 listen_addr = "127.0.0.1:{kp2p}"
@@ -197,21 +197,21 @@ filter = "info"
 '''.format(root=root, peers=json.dumps(peers), heights=heights, attestor_set=attestor_set, **ports)
 
 
-def start_zakurad(binary, workdir, ports, peers, vault, attestor_set):
-    root = os.path.join(workdir, 'zakurad')
+def start_koganyd(binary, workdir, ports, peers, vault, attestor_set):
+    root = os.path.join(workdir, 'koganyd')
     os.makedirs(root, exist_ok=True)
-    conf = os.path.join(workdir, 'zakurad.toml')
+    conf = os.path.join(workdir, 'koganyd.toml')
     with open(conf, 'w', encoding='utf-8') as f:
-        f.write(zakurad_toml(root, ports, peers, vault, attestor_set))
+        f.write(koganyd_toml(root, ports, peers, vault, attestor_set))
     env = dict(os.environ)
     for k in ('KOGANY_VAULT_RPC_MOCK', 'KOGANY_YED_RPC_MOCK'):  # the real index, never the fixtures
         env.pop(k, None)
-    p = spawn([binary, '-c', conf, 'start'], os.path.join(workdir, 'zakurad.log'), env)
+    p = spawn([binary, '-c', conf, 'start'], os.path.join(workdir, 'koganyd.log'), env)
     kogany = Node({'url': 'http://127.0.0.1:%d/' % ports['krpc']})
 
     def up():
         if p.poll() is not None:
-            raise RigError('zakurad exited with %s; see %s' % (p.returncode, os.path.join(workdir, 'zakurad.log')))
+            raise RigError('koganyd exited with %s; see %s' % (p.returncode, os.path.join(workdir, 'koganyd.log')))
         return kogany('getblockcount', timeout=5) is not None
     wait_for('kogany RPC', up, 120)
     return p, kogany
@@ -246,7 +246,7 @@ def cmd_up(args):
              else free_ports(PORT_NAMES))
     state = {'dir': workdir, 'num_nodes': 2, 'pools': [0], 'vault_height': args.vault,
              'attestor_set': args.attestor_set, 'ports': ports, 'pids': {}, 'binaries': {
-                 'zakurad': os.path.abspath(args.zakurad), 'ycashd': os.path.abspath(args.ycashd)},
+                 'koganyd': os.path.abspath(args.koganyd), 'ycashd': os.path.abspath(args.ycashd)},
              'rpc': {
                  '0': {'url': 'http://127.0.0.1:%d/' % ports['yrpc'], 'port': ports['yrpc'], 'user': 'rig',
                        'password': 'rig', 'role': 'sidecar'},
@@ -254,8 +254,8 @@ def cmd_up(args):
                        'password': 'kogany', 'role': 'kogany'}}}
     save(state)
     try:
-        z, kogany = start_zakurad(args.zakurad, workdir, ports, [], args.vault, args.attestor_set)
-        state['pids']['zakurad'] = z.pid
+        z, kogany = start_koganyd(args.koganyd, workdir, ports, [], args.vault, args.attestor_set)
+        state['pids']['koganyd'] = z.pid
         save(state)
         ydir = os.path.join(workdir, 'ycashd')
         os.makedirs(ydir)
@@ -292,7 +292,7 @@ def cmd_up(args):
         print(json.dumps({'dir': workdir, 'height': kogany('getblockcount'), 'kogany': state['rpc']['1']['url'],
                           'sidecar': state['rpc']['0']['url'], 'lightwalletd': state.get('lightwalletd'),
                           'lightwalletd_sidecar': state.get('lightwalletd_sidecar'),
-                          'zakurad': kogany('getnetworkinfo').get('subversion')}, indent=2))
+                          'koganyd': kogany('getnetworkinfo').get('subversion')}, indent=2))
     except Exception:
         down(state)
         raise
@@ -330,7 +330,7 @@ def mine(state, n):
 
 
 def down(state):
-    for name in ('lightwalletd-sidecar', 'lightwalletd', 'ycashd', 'zakurad'):
+    for name in ('lightwalletd-sidecar', 'lightwalletd', 'ycashd', 'koganyd'):
         pid = state.get('pids', {}).get(name)
         if not pid:
             continue
@@ -380,7 +380,7 @@ def cmd_follow(args):
     shutil.rmtree(workdir, ignore_errors=True)
     os.makedirs(workdir)
     ports = free_ports(PORT_NAMES)
-    z, kogany = start_zakurad(args.zakurad, workdir, ports, ['127.0.0.1:%d' % args.peer_p2p], args.vault,
+    z, kogany = start_koganyd(args.koganyd, workdir, ports, ['127.0.0.1:%d' % args.peer_p2p], args.vault,
                               args.attestor_set)
     peer = Node({'url': args.peer_rpc, 'user': args.peer_user, 'password': args.peer_password})
     tips, stop = [], threading.Event()
@@ -448,7 +448,8 @@ def main(argv=None):
     ap.add_argument('--dir', help='the rig directory (else KOGANY_RIG_DIR or YELLOWBACK_DEVNET_DIR)')
     sub = ap.add_subparsers(dest='cmd', required=True)
     up = sub.add_parser('up')
-    up.add_argument('--zakurad', required=True)
+    up.add_argument('--koganyd', '--zakurad', dest='koganyd', required=True,
+                    help='kogany\'s koganyd (--features ycash); --zakurad is its name before kogany dd834da8b')
     up.add_argument('--ycashd', required=True)
     up.add_argument('--dir', dest='dir_up')
     up.add_argument('--vault', type=int, default=110, help='the Vault activation height (default 110)')
@@ -468,7 +469,8 @@ def main(argv=None):
     sub.add_parser('status')
     sub.add_parser('down')
     f = sub.add_parser('follow')
-    f.add_argument('--zakurad', required=True)
+    f.add_argument('--koganyd', '--zakurad', dest='koganyd', required=True,
+                   help='kogany\'s koganyd (--features ycash); --zakurad is its name before kogany dd834da8b')
     f.add_argument('--dir', dest='dir_up')
     f.add_argument('--vault', type=int, default=110)
     f.add_argument('--attestor-set', default=DEFAULT_SET)
