@@ -269,8 +269,8 @@ jobs:
             -q ".[] | select(.headSha == \"$KOGANY_REF\") | $trusted | .databaseId" 2>/dev/null || true)
           for r in $runs; do
             if gh run download "$r" -R boyfromcave/kogany -n koganyd-bin -D "$RUNNER_TEMP/zk-dl" 2>/dev/null \
-               && [ -f "$RUNNER_TEMP/zk-dl/koganyd-bin.tgz" ]; then
-              mkdir -p "$RUNNER_TEMP/zk" && tar xzf "$RUNNER_TEMP/zk-dl/koganyd-bin.tgz" -C "$RUNNER_TEMP/zk"
+               && [ -f "$RUNNER_TEMP/zk-dl/koganyd-bin.tgz" ] && mkdir -p "$RUNNER_TEMP/zk" \
+               && tar xzf "$RUNNER_TEMP/zk-dl/koganyd-bin.tgz" -C "$RUNNER_TEMP/zk"; then
               cat "$RUNNER_TEMP/zk/koganyd-bin.json"
               echo "KOGANYD=$RUNNER_TEMP/zk/koganyd" >> "$GITHUB_ENV"
               echo "got=true" >> "$GITHUB_OUTPUT"
@@ -282,7 +282,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: boyfromcave/kogany
-          ref: ${{ env.KOGANY_REF }}
+          # The literal of KOGANY_REF (bump both): a fixed commit, checked in "koganyd runs here".
+          ref: dd834da8b77e882b9e6a00b3ce70f2b30b930c37
           path: kogany
           persist-credentials: false
           sparse-checkout: ${{ steps.koganyd.outputs.got == 'true' && '.github/actions/setup-zakura-build' || '' }}
@@ -301,6 +302,7 @@ jobs:
           echo "KOGANYD=$GITHUB_WORKSPACE/kogany/target/debug/koganyd" >> "$GITHUB_ENV"
       - name: koganyd runs here
         run: |
+          [ "$(git -C kogany rev-parse HEAD)" = "$KOGANY_REF" ] || { echo "::error::the kogany checkout differs from KOGANY_REF"; exit 1; }
           if ldd "$KOGANYD" | grep 'not found'; then echo "::error::koganyd needs a library this runner lacks"; exit 1; fi
           "$KOGANYD" --version
       - name: ycashd from ycash6's node-bin (vaults/kogany-compat)
@@ -309,20 +311,21 @@ jobs:
         run: |
           set -euo pipefail
           trusted='select(.event == "push" or .event == "schedule" or .event == "workflow_dispatch")'
-          runs=$(gh run list -R "$YCASH6_REPO" -w yellowback-tests.yml -b "$YCASH6_BRANCH" -L 20 --json databaseId,event -q ".[] | $trusted | .databaseId")
+          runs=$(gh run list -R "$YCASH6_REPO" -w yellowback-tests.yml -b "$YCASH6_BRANCH" -L 50 --json databaseId,event,conclusion,headBranch \
+            -q ".[] | select(.conclusion == \"success\" and .headBranch == \"$YCASH6_BRANCH\") | $trusted | .databaseId")
           for r in $runs; do
-            if gh run download "$r" -R "$YCASH6_REPO" -n node-bin -D "$RUNNER_TEMP/dl" 2>/dev/null; then
+            if gh run download "$r" -R "$YCASH6_REPO" -n node-bin -D "$RUNNER_TEMP/dl" 2>/dev/null \
+               && mkdir -p "$RUNNER_TEMP/node" \
+               && tar -xzf "$RUNNER_TEMP/dl/node-bin.tgz" -C "$RUNNER_TEMP/node" src/ycashd src/ycash-cli; then
               echo "ycashd from $YCASH6_REPO run $r"; break
             fi
           done
-          mkdir -p "$RUNNER_TEMP/node"
-          tar -xzf "$RUNNER_TEMP/dl/node-bin.tgz" -C "$RUNNER_TEMP/node" src/ycashd src/ycash-cli
           test -x "$RUNNER_TEMP/node/src/ycashd"
           echo "YCASHD=$RUNNER_TEMP/node/src/ycashd" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ${{ env.YCASH6_REPO }}
-          ref: ${{ env.YCASH6_BRANCH }}
+          ref: vaults/kogany-compat # the literal of YCASH6_BRANCH
           path: ycash6
           persist-credentials: false
           sparse-checkout: zcutil
