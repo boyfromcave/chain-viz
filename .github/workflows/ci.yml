@@ -12,6 +12,13 @@
 #                          live instance. The smoke needs live data: on the recorded fixture
 #                          session (--replay tests/fixtures/session-reorg2.jsonl) its revenue and
 #                          vault checks fail, so it is not a push-tier step.
+# kogany leg (report-only; a push to vaults/kogany-compat, or workflow_dispatch with tier=kogany):
+#   kogany (ubuntu-24.04)  qa/kogany-leg.sh: chain-viz with a regtest kogany node (the third node line,
+#                          workspace kogany plan W9-c) as its only node, kept on a chain by the ycash6
+#                          test rig (qa/kogany-rig.py), and the UI smoke. koganyd is kogany's
+#                          koganyd-bin artifact at KOGANY_REF (the workspace's
+#                          docs/plans/kogany/ci-design.md contract), else built at that commit;
+#                          ycashd is ycash6's node-bin of vaults/kogany-compat.
 #
 # Audit 2026-10-01: every action is pinned to a commit SHA (H-15; the comment carries the tag it
 # was taken from — bump both together), the toolchain is the exact pinned release (H-16/I-8),
@@ -23,16 +30,17 @@ on:
   push:
     # The one branch list: harden/yellowback (P1 hardening), upgrade/vault (the network upgrade),
     # upgrade/vault-in-term (in-term claims, rpcversion 6), upgrade/quantum-vaults (post-quantum owners and the fee structure,
-    # rpcversion 8), main (the branch of record, AGENTS.md rule 2).
-    branches: &branches [main, harden/yellowback, upgrade/vault, upgrade/vault-in-term, upgrade/quantum-vaults]
+    # rpcversion 8), main (the branch of record, AGENTS.md rule 2), vaults/kogany-compat (the kogany
+    # work's integration branch, workspace kogany plan section 4.2 rule 0).
+    branches: &branches [main, harden/yellowback, upgrade/vault, upgrade/vault-in-term, upgrade/quantum-vaults, vaults/kogany-compat]
   pull_request:
     branches: *branches
   workflow_dispatch:
     inputs:
       tier:
-        description: "push = the push/PR jobs only; nightly = also the devnet job"
+        description: "push = the push/PR jobs only; nightly = also the devnet job; kogany = also the kogany leg (report-only)"
         type: choice
-        options: [push, nightly]
+        options: [push, nightly, kogany]
         default: push
       node_run_id:
         description: "nightly: a run id of the node line's yellowback-tests workflow to take ycashd from (empty = the newest run on the matching branch that has the artifact)"
@@ -226,4 +234,124 @@ jobs:
         with:
           name: chain-viz-devnet-logs
           path: ${{ runner.temp }}/devnet/**/*.log
+          if-no-files-found: ignore
+
+  # The kogany leg (report-only until the lead architect flips it: drop continue-on-error). No cache
+  # is written: koganyd, ycashd and fetch-params.sh are other repositories' code (rust-cache restores
+  # only, as in devnet).
+  kogany:
+    # Cache poisoning (code scanning): a downloaded artifact runs here, so only the repository owner starts it.
+    if: ((github.event_name == 'push' && github.ref_name == 'vaults/kogany-compat') || (github.event_name == 'workflow_dispatch' && inputs.tier == 'kogany')) && github.actor == github.repository_owner
+    name: kogany (report-only)
+    needs: check
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      # kogany vaults/kogany-compat at W5-f (the YED module registered: the real index answers)
+      KOGANY_REF: dd834da8b77e882b9e6a00b3ce70f2b30b930c37
+      YCASH6_REPO: boyfromcave/ycash6
+      YCASH6_BRANCH: vaults/kogany-compat
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # koganyd-bin.tgz: koganyd (dev profile, --features ycash, ubuntu-24.04, the runner's librocksdb)
+      # and koganyd-bin.json, from a push, schedule or dispatch run of kogany at KOGANY_REF only.
+      - name: kogany's koganyd-bin at KOGANY_REF
+        id: koganyd
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$KOGANY_REF" in *[!0-9a-f]*|'') echo "::error::KOGANY_REF is not a commit id"; exit 1 ;; esac
+          trusted='select(.event == "push" or .event == "schedule" or .event == "workflow_dispatch")'
+          runs=$(gh run list -R boyfromcave/kogany -c "$KOGANY_REF" -L 50 --json databaseId,event,headSha \
+            -q ".[] | select(.headSha == \"$KOGANY_REF\") | $trusted | .databaseId" 2>/dev/null || true)
+          for r in $runs; do
+            if gh run download "$r" -R boyfromcave/kogany -n koganyd-bin -D "$RUNNER_TEMP/zk-dl" 2>/dev/null \
+               && [ -f "$RUNNER_TEMP/zk-dl/koganyd-bin.tgz" ] && mkdir -p "$RUNNER_TEMP/zk" \
+               && tar xzf "$RUNNER_TEMP/zk-dl/koganyd-bin.tgz" -C "$RUNNER_TEMP/zk"; then
+              cat "$RUNNER_TEMP/zk/koganyd-bin.json"
+              echo "KOGANYD=$RUNNER_TEMP/zk/koganyd" >> "$GITHUB_ENV"
+              echo "got=true" >> "$GITHUB_OUTPUT"
+              echo "koganyd from boyfromcave/kogany run $r"; exit 0
+            fi
+          done
+          echo "got=false" >> "$GITHUB_OUTPUT"
+          echo "no koganyd-bin of boyfromcave/kogany at $KOGANY_REF: building it here"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: boyfromcave/kogany
+          # The literal of KOGANY_REF (bump both): a fixed commit, checked in "koganyd runs here".
+          ref: dd834da8b77e882b9e6a00b3ce70f2b30b930c37
+          path: kogany
+          persist-credentials: false
+          sparse-checkout: ${{ steps.koganyd.outputs.got == 'true' && '.github/actions/setup-zakura-build' || '' }}
+      # kogany's setup-zakura-build as its script (librocksdb for koganyd). The fallback build fails at
+      # dependency resolution until boyfromcave/zakura-common-ycash exists on GitHub (kogany plan K-2).
+      - name: kogany build packages
+        env:
+          INSTALL_LIBCLANG: "false"
+          INSTALL_PROTOC: "false"
+        run: bash kogany/.github/actions/setup-zakura-build/install-ubuntu-packages.sh
+      - name: build koganyd (kogany at KOGANY_REF, --features ycash)
+        if: steps.koganyd.outputs.got != 'true'
+        working-directory: kogany
+        run: |
+          cargo build --locked -p zakura --features ycash --bin koganyd
+          echo "KOGANYD=$GITHUB_WORKSPACE/kogany/target/debug/koganyd" >> "$GITHUB_ENV"
+      - name: koganyd runs here
+        run: |
+          [ "$(git -C kogany rev-parse HEAD)" = "$KOGANY_REF" ] || { echo "::error::the kogany checkout differs from KOGANY_REF"; exit 1; }
+          if ldd "$KOGANYD" | grep 'not found'; then echo "::error::koganyd needs a library this runner lacks"; exit 1; fi
+          "$KOGANYD" --version
+      - name: ycashd from ycash6's node-bin (vaults/kogany-compat)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trusted='select(.event == "push" or .event == "schedule" or .event == "workflow_dispatch")'
+          runs=$(gh run list -R "$YCASH6_REPO" -w yellowback-tests.yml -b "$YCASH6_BRANCH" -L 50 --json databaseId,event,conclusion,headBranch \
+            -q ".[] | select(.conclusion == \"success\" and .headBranch == \"$YCASH6_BRANCH\") | $trusted | .databaseId")
+          for r in $runs; do
+            if gh run download "$r" -R "$YCASH6_REPO" -n node-bin -D "$RUNNER_TEMP/dl" 2>/dev/null \
+               && mkdir -p "$RUNNER_TEMP/node" \
+               && tar -xzf "$RUNNER_TEMP/dl/node-bin.tgz" -C "$RUNNER_TEMP/node" src/ycashd src/ycash-cli; then
+              echo "ycashd from $YCASH6_REPO run $r"; break
+            fi
+          done
+          test -x "$RUNNER_TEMP/node/src/ycashd"
+          echo "YCASHD=$RUNNER_TEMP/node/src/ycashd" >> "$GITHUB_ENV"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ env.YCASH6_REPO }}
+          ref: vaults/kogany-compat # the literal of YCASH6_BRANCH
+          path: ycash6
+          persist-credentials: false
+          sparse-checkout: zcutil
+      - name: fetch zcash params
+        run: ycash6/zcutil/fetch-params.sh
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master 2025-10
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - run: cargo build --release --locked
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: qa/kogany-leg.sh (report-only)
+        env:
+          KOGANY_RIG_DIR: ${{ runner.temp }}/kogany-rig
+        run: qa/kogany-leg.sh
+      - name: upload the rig logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: chain-viz-kogany-logs
+          path: |
+            ${{ runner.temp }}/kogany-rig/*.log
+            ${{ runner.temp }}/kogany-rig/*.json
+          retention-days: 14
           if-no-files-found: ignore
