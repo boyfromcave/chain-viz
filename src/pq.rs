@@ -11,10 +11,12 @@
 //! - `TX_PQCHANNEL` (spec header, D-Q-19): `63 20<h> 5n c2 69 21<serverKey:33> ac 67 <refundHeight>
 //!   b1 75 20<h> 5n c2 68`, both client slots byte-identical, 112–117 bytes.
 //! - A `pqkeyid` is `scheme ‖ keyHash` (66 hex digits), the bytes a V pushes and a v4 MINT carries.
-//! - Addresses are Base58Check(version ‖ scheme ‖ keyHash), 53 characters: the plain-YEC PQ address
-//!   (`sq…`/`tq…`/`rq…`, D-Q-20, what `getblock`'s `scriptPubKey.addresses` spells for a PQPKH
-//!   output, `key_io.cpp`) and the PQ Yellowback address (`yb…`/`yt…`/`yr…`, spec §4 and D-Q-21,
-//!   what `ownerAddress` and the wallet RPC that makes a new owner key spell).
+//! - Addresses are Base58Check(version ‖ keyHash), 53 characters, one 3-byte version per chain,
+//!   coin and scheme (decision D-9, spec §4.1, `rpcversion` 9): the plain-YEC PQ address
+//!   (`sqf…`/`sqs…`, `tqf…`/`tqs…`, `rqf…`/`rqs…`, D-Q-20, what `getblock`'s
+//!   `scriptPubKey.addresses` spells for a PQPKH output, `key_io.cpp`) and the PQ Yellowback
+//!   address (`ybf…`/`ybs…`, `ytf…`/`yts…`, `yrf…`/`yrs…`, spec §4 and D-Q-21, what `ownerAddress`
+//!   and the wallet RPC that makes a new owner key spell).
 
 use sha2::{Digest, Sha256};
 
@@ -124,39 +126,58 @@ pub fn parse_pqkeyid(hex_id: &str) -> Option<(u8, [u8; 32])> {
     Some((b[0], b[1..].try_into().ok()?))
 }
 
-/// The plain-YEC PQ address version (D-Q-20) for a `getblockchaininfo.chain` name.
-pub fn plain_version(chain: &str) -> Option<[u8; 2]> {
-    match chain {
-        "main" => Some([0x4D, 0xD9]),
-        "test" => Some([0x4F, 0x61]),
-        "regtest" => Some([0x4C, 0x51]),
-        _ => None,
-    }
+/// Which post-quantum address a version names: the plain-YEC form (`sq…`/`tq…`/`rq…`, D-Q-20, a
+/// `TX_PQPKH` payee) or the PQ Yellowback form (`yb…`/`yt…`/`yr…`, spec §4 and D-Q-21, an owner).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PqCoin {
+    Yec,
+    Yed,
 }
 
-/// The PQ Yellowback address version (spec §4; mainnet `yb…` 0x56AB per D-Q-21).
-pub fn yed_version(chain: &str) -> Option<[u8; 2]> {
-    match chain {
-        "main" => Some([0x56, 0xAB]),
-        "test" => Some([0x57, 0x1E]),
-        "regtest" => Some([0x57, 0x10]),
-        _ => None,
-    }
+/// Every PQ address version (quantum spec §4.1, decision D-9): one 3-byte version per
+/// (`getblockchaininfo.chain`, coin, scheme), so the prefix names the scheme (`f` FN-DSA-512, `s`
+/// SLH-DSA-SHA2-128s). One table for both directions; the node's `PlainPQAddressVersions` and
+/// Yellowback `pqAddressVersions` (ycash-dd / ycash6 `up/b2-pq-prefix`). The pre-D-9 form
+/// (2-byte version ‖ scheme ‖ keyHash) is not in it and does not decode.
+pub const PQ_VERSIONS: [([u8; 3], &str, PqCoin, u8); 12] = [
+    ([0x4D, 0xDD, 0x04], "main", PqCoin::Yec, SCHEME_FN_DSA_512),           // sqf…
+    ([0x4D, 0xDE, 0x6A], "main", PqCoin::Yec, SCHEME_SLH_DSA_SHA2_128S),    // sqs…
+    ([0x4F, 0x65, 0x19], "test", PqCoin::Yec, SCHEME_FN_DSA_512),           // tqf…
+    ([0x4F, 0x66, 0x7F], "test", PqCoin::Yec, SCHEME_SLH_DSA_SHA2_128S),    // tqs…
+    ([0x4C, 0x54, 0xEF], "regtest", PqCoin::Yec, SCHEME_FN_DSA_512),        // rqf…
+    ([0x4C, 0x56, 0x55], "regtest", PqCoin::Yec, SCHEME_SLH_DSA_SHA2_128S), // rqs…
+    ([0x56, 0xAE, 0xDE], "main", PqCoin::Yed, SCHEME_FN_DSA_512),           // ybf…
+    ([0x56, 0xB0, 0x44], "main", PqCoin::Yed, SCHEME_SLH_DSA_SHA2_128S),    // ybs…
+    ([0x57, 0x21, 0xC9], "test", PqCoin::Yed, SCHEME_FN_DSA_512),           // ytf…
+    ([0x57, 0x23, 0x30], "test", PqCoin::Yed, SCHEME_SLH_DSA_SHA2_128S),    // yts…
+    ([0x57, 0x14, 0x44], "regtest", PqCoin::Yed, SCHEME_FN_DSA_512),        // yrf…
+    ([0x57, 0x15, 0xAA], "regtest", PqCoin::Yed, SCHEME_SLH_DSA_SHA2_128S), // yrs…
+];
+
+/// The 3-byte version of a PQ address on `chain` (`getblockchaininfo.chain`); `None` for another
+/// chain or an unregistered scheme.
+pub fn version(chain: &str, coin: PqCoin, scheme: u8) -> Option<[u8; 3]> {
+    PQ_VERSIONS.iter().find(|(_, c, k, s)| *c == chain && *k == coin && *s == scheme).map(|(v, ..)| *v)
 }
 
-/// Base58Check(version ‖ scheme ‖ keyHash): 53 characters.
-pub fn encode(version: [u8; 2], scheme: u8, hash: &[u8; 32]) -> String {
+/// Whether `chain` has PQ addresses (a known `getblockchaininfo.chain`).
+pub fn has_versions(chain: &str) -> bool {
+    PQ_VERSIONS.iter().any(|(_, c, ..)| *c == chain)
+}
+
+/// Base58Check(version ‖ keyHash), 53 characters; `None` where [`version`] is.
+pub fn encode(chain: &str, coin: PqCoin, scheme: u8, hash: &[u8; 32]) -> Option<String> {
     let mut p = Vec::with_capacity(39);
-    p.extend_from_slice(&version);
-    p.push(scheme);
+    p.extend_from_slice(&version(chain, coin, scheme)?);
     p.extend_from_slice(hash);
     let check = Sha256::digest(Sha256::digest(&p));
     p.extend_from_slice(&check[..4]);
-    bs58::encode(p).into_string()
+    Some(bs58::encode(p).into_string())
 }
 
-/// A PQ address's version, scheme and key hash (checksum checked).
-pub fn decode(addr: &str) -> Option<([u8; 2], u8, [u8; 32])> {
+/// A PQ address's chain, coin, scheme and key hash: 35 bytes under a version of [`PQ_VERSIONS`],
+/// checksum checked; `None` for anything else.
+pub fn decode(addr: &str) -> Option<(&'static str, PqCoin, u8, [u8; 32])> {
     let b = bs58::decode(addr).into_vec().ok()?;
     if b.len() != 39 {
         return None;
@@ -165,7 +186,8 @@ pub fn decode(addr: &str) -> Option<([u8; 2], u8, [u8; 32])> {
     if check[..4] != b[35..] {
         return None;
     }
-    Some(([b[0], b[1]], b[2], b[3..35].try_into().ok()?))
+    let (_, chain, coin, scheme) = PQ_VERSIONS.iter().find(|(v, ..)| v[..] == b[..3])?;
+    Some((chain, *coin, *scheme, b[3..35].try_into().ok()?))
 }
 
 fn pushes(script: &[u8]) -> Option<Vec<(u8, &[u8])>> {
@@ -332,12 +354,13 @@ pub mod tests {
 
     #[test]
     fn addresses() {
-        // spec §4's sampled extremes: every regtest/testnet/mainnet PQ Yellowback address is 53 characters
+        // every PQ address is 53 characters and its first three characters name chain, coin and scheme
         for chain in ["main", "test", "regtest"] {
             for (scheme, h) in [(1u8, [0u8; 32]), (2, [0xff; 32])] {
-                let y = encode(yed_version(chain).unwrap(), scheme, &h);
-                let p = encode(plain_version(chain).unwrap(), scheme, &h);
+                let y = encode(chain, PqCoin::Yed, scheme, &h).unwrap();
+                let p = encode(chain, PqCoin::Yec, scheme, &h).unwrap();
                 assert_eq!((y.len(), p.len()), (53, 53), "{} {}", y, p);
+                let f = if scheme == 2 { "f" } else { "s" };
                 let want_y = match chain {
                     "main" => "yb",
                     "test" => "yt",
@@ -348,10 +371,16 @@ pub mod tests {
                     "test" => "tq",
                     _ => "rq",
                 };
-                assert!(y.starts_with(want_y) && p.starts_with(want_p), "{} {}", y, p);
-                assert_eq!(decode(&y), Some((yed_version(chain).unwrap(), scheme, h)));
+                assert!(y.starts_with(&format!("{want_y}{f}")) && p.starts_with(&format!("{want_p}{f}")), "{} {}", y, p);
+                assert_eq!(decode(&y), Some((chain, PqCoin::Yed, scheme, h)));
+                assert_eq!(decode(&p), Some((chain, PqCoin::Yec, scheme, h)));
             }
         }
+        assert_eq!(encode("main", PqCoin::Yed, 3, &[0; 32]), None);
+        assert_eq!(encode("other", PqCoin::Yec, 1, &[0; 32]), None);
+        // the pre-D-9 form (0x5710 ‖ scheme ‖ keyHash; 0x4DD9 ‖ …) does not decode
+        assert!(decode("yr2Tp5VfX9aERxy2khaRBpd7c3FY7nnPNXFgWE9ix6TPjLE4fqeRP").is_none());
+        assert!(decode("sq4couNBfnJoRxqXF89SWjiPh5wktFi5bb5S4F89xMMsCrqRf2L4z").is_none());
         assert!(decode("smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4").is_none());
         assert_eq!(parse_pqkeyid(&format!("01{}", "ab".repeat(32))), Some((1, [0xab; 32])));
         assert_eq!(parse_pqkeyid(&format!("03{}", "ab".repeat(32))), None);

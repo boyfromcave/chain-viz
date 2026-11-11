@@ -38,7 +38,7 @@ signer set who sign prices.
   Yellowback and vault panels, a `ycashd` built from the `upgrade/quantum-vaults` branch of
   [ycash-dd](https://github.com/boyfromcave/ycash-dd) or
   [ycash6](https://github.com/boyfromcave/ycash6) (this line joins `upgrade/vault` at release),
-  speaking Yellowback `rpcversion` 8 (7 and 6 are still modelled; see [rpcversion](#rpcversion)).
+  speaking Yellowback `rpcversion` 9 (an older node is shown with a warning; see [rpcversion](#rpcversion)).
 - **Try it:** the node's devnet starts chain-viz for you; see
   [Run against the devnet](#run-against-the-devnet).
 
@@ -251,7 +251,7 @@ fees, median age, transactions older than 2 blocks (a pool filtering it, or a fe
 policy), *partial* = present on some nodes but not all (propagation, or a stock node refusing
 what it does not understand).
 
-**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 6, 7 or 8 or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the fee structure (`params.fees`: the protocol fee bands of the debt at `pMint` with the floor and attestor share, the network $/KB rates at the attested tip price with the floor and cap; `params.maxMintCents`; `params.supplyCap` with the per-vault share; rpcversion 8), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C — of the debt at `pMint` from rpcversion 8, of the collateral before — the claim delay), the vault
+**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 9 or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the fee structure (`params.fees`: the protocol fee bands of the debt at `pMint` with the floor and attestor share, the network $/KB rates at the attested tip price with the floor and cap; `params.maxMintCents`; `params.supplyCap` with the per-vault share; rpcversion 8), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C — of the debt at `pMint` from rpcversion 8, of the collateral before — the claim delay), the vault
 upgrade from `yed_getinfo.upgrade` (status, branch ID, activation height, claim delay, the YED
 attestor set), arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
 `UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
@@ -445,8 +445,14 @@ YecWallet or the CLI.
 
 ## rpcversion
 
-chain-viz models `yed_*` at **rpcversion 8** on this branch (`upgrade/quantum-vaults`, the post-quantum line with
-the fee structure; `KNOWN_RPC_VERSION` in `src/rpc.rs`) and at 7 and 6 (`MODELLED_RPC_VERSIONS`). rpcversion 8 (the
+chain-viz models `yed_*` at **rpcversion 9** (`KNOWN_RPC_VERSION` and `MODELLED_RPC_VERSIONS` in `src/rpc.rs`):
+decision D-9 (the workspace's `docs/plans/yellowback-pq-prefix-rpc-delta.md` §4.12, quantum spec §4.1) puts the
+post-quantum scheme in a 3-byte address version, so PQ addresses read `sqf…`/`sqs…` (testnet `tqf…`/`tqs…`, regtest
+`rqf…`/`rqs…`) and owners `ybf…`/`ybs…` (`ytf…`/`yts…`, `yrf…`/`yrs…`); `yed_getinfo.params.pqAddressVersion` and
+`params.pq.plainAddressVersion` are objects keyed by scheme. chain-viz encodes those addresses itself (`src/pq.rs`,
+one table for both directions) in the D-9 form only, so a node before 9 (ycash-dd and ycash6 before the D-9 change)
+is shown with the warning pill; the nodes that speak 9 are ycash-dd and ycash6 6.22.x from that change on. The
+earlier lines are described below. rpcversion 8 (the
 workspace's `docs/plans/yellowback-quantum-fees-spec.md`; ycash-dd `doc/yellowback-rpc.md`, "The fee structure"):
 the pool fee is a protocol fee in dollars of the debt by band at the vault's stored `pMint` (`params.fees.protocol`),
 network fees are dollars per KB at the attested tip price (`params.fees.network`), `params.maxMintCents` and
@@ -459,7 +465,7 @@ scheme ‖ key hash at payload offsets 17..49; every other type stays version 3,
 at either version, so it observes both lines), `yed_getinfo.params.pq` carries the schemes, the Falcon height and
 the size-priced fee rate; the vault primitive lists `owner` (a pqkeyid) and `ownerscheme`, to which `/api/vaults`
 adds `owneraddress` and `ownerschemename`. A `TX_PQPKH` output (`20 <keyHash> 51|52 c2`) is a payee by its plain-YEC
-PQ address (`sq…`/`tq…`/`rq…`, what `getblock` spells), a `TX_PQCHANNEL` output by `pqchannel:` and its client's;
+PQ address (`sqf…`/`sqs…`, `tq…`, `rq…`, what `getblock` spells), a `TX_PQCHANNEL` output by `pqchannel:` and its client's;
 an input carrying the chunked PQ signature stack counts toward a block's `pqBytes` (its share of the block is in the
 block tooltip) and an owner spend's `pqscheme` (`src/pq.rs`). rpcversion 6 is the in-term claims line
 (`upgrade/vault-in-term`; rpcversion 5 is the vault upgrade): `yed_listclaimable` lists every
@@ -472,7 +478,7 @@ wallets, which refuse a node whose `rpcversion` is not exactly theirs (they woul
 transactions from shapes they do not know), chain-viz is an observer and never refuses a node:
 an older node still parses (fields chain-viz does not model land in `extra`; it has no
 `upgrade`), and the
-health ribbon shows a warning pill naming the versions when any node is at neither 6 nor 7, or the nodes mix them.
+health ribbon shows a warning pill naming the versions when any node is not at 9, or the nodes mix them.
 
 ## The RPC budget
 

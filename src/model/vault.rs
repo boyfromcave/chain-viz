@@ -130,7 +130,7 @@ pub struct VaultModel {
     /// `yed_getinfo.upgrade.attestorSetId` of the leader: the YED attestor set.
     pub attestor_set: Option<String>,
     /// The PQ Yellowback address version of the chain (quantum spec §4), from its name.
-    owner_version: Option<[u8; 2]>,
+    owner_chain: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -290,17 +290,17 @@ impl VaultModel {
         Emitted { height: rec.get("height").and_then(Value::as_u64), node: None, kind: EventKind::VaultSpend(rec) }
     }
 
-    /// The chain's name (`getblockchaininfo.chain`): fixes the owner address version.
+    /// The chain's name (`getblockchaininfo.chain`): fixes the owner address versions.
     pub fn set_chain(&mut self, chain: &str) {
-        self.owner_version = crate::pq::yed_version(chain);
+        self.owner_chain = crate::pq::has_versions(chain).then(|| chain.to_string());
     }
 
     /// `owneraddress` and `ownerschemename` beside a row's `owner` (a pqkeyid).
     fn with_owner(&self, row: &mut Value) {
         let Some((scheme, hash)) = row.get("owner").and_then(Value::as_str).and_then(crate::pq::parse_pqkeyid) else { return };
         let Some(o) = row.as_object_mut() else { return };
-        if let Some(v) = self.owner_version {
-            o.insert("owneraddress".into(), crate::pq::encode(v, scheme, &hash).into());
+        if let Some(a) = self.owner_chain.as_deref().and_then(|c| crate::pq::encode(c, crate::pq::PqCoin::Yed, scheme, &hash)) {
+            o.insert("owneraddress".into(), a.into());
         }
         o.insert("ownerschemename".into(), crate::pq::scheme_name(scheme).into());
     }
@@ -464,8 +464,8 @@ mod tests {
         let snap = m.snapshot();
         let r = snap.vaults.iter().find(|x| x["outpoint"] == "v1:0").unwrap();
         let addr = r["owneraddress"].as_str().unwrap();
-        assert!(addr.starts_with("yr") && addr.len() == 53, "{}", addr);
-        assert_eq!(crate::pq::decode(addr), Some(([0x57, 0x10], 1, [0x42; 32])));
+        assert!(addr.starts_with("yrs") && addr.len() == 53, "{}", addr);
+        assert_eq!(crate::pq::decode(addr), Some(("regtest", crate::pq::PqCoin::Yed, 1, [0x42; 32])));
         assert_eq!(r["ownerschemename"], "SLH-DSA-SHA2-128s");
         let r2 = snap.vaults.iter().find(|x| x["outpoint"] == "v2:0").unwrap();
         assert!(r2.get("owneraddress").is_none(), "an unregistered scheme has no address");

@@ -156,7 +156,7 @@ pub struct RevenueModel {
     evicted: u64,
     prefix: Option<[u8; 2]>,
     /// The plain-YEC PQ address version of the chain (`sq…`/`tq…`/`rq…`, D-Q-20), from its name.
-    pq_prefix: Option<[u8; 2]>,
+    pq_chain: Option<String>,
     keep: u64,
     /// The fund's address as last attributed. 6.20.0's `getblocksubsidy` no longer names it
     /// (only `miner founders totalblocksubsidy`), so it is learned from a coinbase where exactly
@@ -222,7 +222,7 @@ impl RevenueModel {
 
     /// The chain's name (`getblockchaininfo.chain`): fixes the PQ address version.
     pub fn set_chain(&mut self, chain: &str) {
-        self.pq_prefix = crate::pq::plain_version(chain);
+        self.pq_chain = crate::pq::has_versions(chain).then(|| chain.to_string());
     }
 
     /// The address of an output: `scriptPubKey.addresses[0]`, else encoded from a P2PKH hex, a
@@ -236,8 +236,8 @@ impl RevenueModel {
         let script = hex::decode(hex).ok()?;
         let pq = crate::pq::pqpkh(&script).map(|o| (o, "")).or_else(|| crate::pq::pqchannel(&script).map(|c| ((c.scheme, c.client_hash), "pqchannel:")));
         if let Some(((scheme, h), tag)) = pq {
-            return Some(match self.pq_prefix {
-                Some(v) => format!("{}{}", tag, crate::pq::encode(v, scheme, &h)),
+            return Some(match self.pq_chain.as_deref().and_then(|c| crate::pq::encode(c, crate::pq::PqCoin::Yec, scheme, &h)) {
+                Some(a) => format!("{}{}", tag, a),
                 None => format!("{}pqkeyid:{:02x}{}", tag, scheme, hex::encode(h)),
             });
         }
@@ -766,10 +766,10 @@ mod tests {
         assert_eq!(m.address_of(&ch).unwrap(), format!("pqchannel:pqkeyid:02{}", "43".repeat(32)));
         m.set_chain("regtest");
         let a = m.address_of(&pkh).unwrap();
-        assert!(a.starts_with("rq") && a.len() == 53, "{}", a);
-        assert_eq!(crate::pq::decode(&a), Some(([0x4C, 0x51], 1, [0x42; 32])));
+        assert!(a.starts_with("rqs") && a.len() == 53, "{}", a);
+        assert_eq!(crate::pq::decode(&a), Some(("regtest", crate::pq::PqCoin::Yec, 1, [0x42; 32])));
         let c = m.address_of(&ch).unwrap();
-        assert!(c.starts_with("pqchannel:rq") && c.len() == 63, "{}", c);
+        assert!(c.starts_with("pqchannel:rqf") && c.len() == 63, "{}", c);
         // a 39-byte address does not set the 20-byte prefix
         m.learn_prefix(&a);
         assert_eq!(m.address_of(&json!({"hex": "76a9143adc5831726e1b524b0549a1cea8922e01610c7388ac"})).unwrap(), "hash160:3adc5831726e1b524b0549a1cea8922e01610c73");
