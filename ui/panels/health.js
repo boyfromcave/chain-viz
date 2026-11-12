@@ -20,8 +20,10 @@ const pct = (bps) => (bps === null || bps === undefined ? '–' : `${(bps / 100)
 // post-quantum line, upgrade/quantum-vaults): PQ owners (ownerScheme / ownerHash / a 53-character ownerAddress),
 // params.pq, a version-4 MINT payload. rpcversion 8 (the fee structure): params.fees (protocol fee bands of the
 // debt at pMint, network $/KB at the tip price), maxMintCents, supplyCap, pMint on every vault row; feeMinZat /
-// feeBps gone. 8, 7 and 6 are modelled, any other version or a mix of them warns.
-const KNOWN_RPCVERSIONS = [8, 7, 6];
+// feeBps gone. rpcversion 9 (D-9): post-quantum addresses carry the scheme in a 3-byte version (sqf…/sqs…,
+// ybf…/ybs…), the form chain-viz encodes owner addresses and PQ payees in. Only 9 is modelled; any other
+// version (an older node spells PQ addresses the pre-D-9 way) or a mix of them warns.
+const KNOWN_RPCVERSIONS = [9];
 function thresholds(info) {
   const p = info?.params || {};
   return { theta: p.claimThresholdBps ?? 11000, emerg: p.attest?.emergencyRatioBps ?? 10500, inTerm: p.inTermClaims === true, fees: p.earlyRedeemFeeBps || [], claimDelay: p.claimDelay };

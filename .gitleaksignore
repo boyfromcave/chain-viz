@@ -18,3 +18,30 @@
 # tests/hardening.rs: the Sec-WebSocket-Key value is the sample nonce from RFC 6455
 # §1.3 ("the sample nonce" base64), used to drive the WebSocket handshake in a test. Not a credential.
 48cb7e1a94e9a70303d8066b2c974323bf3aad01:tests/hardening.rs:generic-api-key:114
+
+# tests/fixtures/pq_address_vectors.json: the shared post-quantum address vectors (quantum spec 4.1, D-9): public key hashes and
+# addresses, no secrets; matched by generic-api-key. Checked 2026-11-12.
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:51
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:60
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:105
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:114
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:159
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:168
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:213
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:222
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:267
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:276
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:321
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:330
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:375
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:384
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:429
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:438
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:483
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:492
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:537
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:546
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:591
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:600
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:645
+cbc5efb8977b41f43f311b6dc14a2f0498f7a69e:tests/fixtures/pq_address_vectors.json:generic-api-key:654

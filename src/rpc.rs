@@ -525,11 +525,17 @@ pub struct TxOut {
 /// attested tip price (`params.fees.network`), `params.maxMintCents` and `params.supplyCap` are new,
 /// every vault row carries `pMint`; `params.feeMinZat` / `params.feeBps` are gone and
 /// `yed_getfeepayee` lost its `collateralZat` argument ([`feepayee_args`]). No typed field here
-/// changed (the new params ride in the untyped `params`); the UI models 8, 7 and 6
-/// ([`MODELLED_RPC_VERSIONS`]) and warns on any other or on a mix.
-pub const KNOWN_RPC_VERSION: u32 = 8;
+/// changed (the new params ride in the untyped `params`).
+/// 9 is decision D-9 (the workspace's `docs/plans/yellowback-pq-prefix-rpc-delta.md` §4.12, quantum
+/// spec §4.1): a post-quantum address is Base58Check(3-byte version ‖ keyHash), the scheme in the
+/// prefix (`sqf…`/`sqs…`, `ybf…`/`ybs…`; `src/pq.rs`), and `yed_getinfo.params.pqAddressVersion` /
+/// `params.pq.plainAddressVersion` are objects keyed by scheme (untyped here). chain-viz encodes PQ
+/// addresses itself (owner addresses, PQPKH payees) in the D-9 form only, so a node before 9, which
+/// spells them the old way, is no longer modelled: the UI models 9 ([`MODELLED_RPC_VERSIONS`]) and
+/// warns on any other or on a mix (it never refuses a node: it is an observer).
+pub const KNOWN_RPC_VERSION: u32 = 9;
 /// The versions whose shapes chain-viz models without a warning.
-pub const MODELLED_RPC_VERSIONS: [u32; 3] = [8, 7, 6];
+pub const MODELLED_RPC_VERSIONS: [u32; 1] = [9];
 
 /// The first `rpcversion` whose `yed_getfeepayee` takes no `collateralZat`.
 pub const FEEPAYEE_NO_COLLATERAL_FROM: u32 = 8;

@@ -435,12 +435,18 @@
     "falconActive": false,
     "falconHeight": -1,
     "feeRateZatPerKB": 100,
-    "plainAddressVersion": "4c51",
+    "plainAddressVersion": {
+     "1": "4c5655",
+     "2": "4c54ef"
+    },
     "schemes": [
      1
     ]
    },
-   "pqAddressVersion": "5710",
+   "pqAddressVersion": {
+    "1": "5715aa",
+    "2": "571444"
+   },
    "recapRatioBps": 50000,
    "refLag": 2,
    "refWindow": 40,
@@ -466,7 +472,7 @@
   },
   "protectedByIndex": true,
   "rebuilt": false,
-  "rpcversion": 8,
+  "rpcversion": 9,
   "startHeight": 103,
   "supplyCapReached": false,
   "unhealthyReason": "",
@@ -555,7 +561,7 @@
    "mintedCents": 100000,
    "noticeHeight": null,
    "noticed": false,
-   "ownerAddress": "yb5u8LCGfU3hYYhhAqvYzR3ZQuNFEUWzx5dmLiGjPW8Gqto3xqqCc",
+   "ownerAddress": "ybs3X4pcEUunYbKiws3N3LpX22ttkmAY3ZZhjitVx27wrHWd3QAx9",
    "pClaim": 400000,
    "pMint": 1985000,
    "residualZat": 0,
@@ -582,7 +588,7 @@
    "mintedCents": 100000,
    "noticeHeight": null,
    "noticed": false,
-   "ownerAddress": "yb5u8LCGfU3hYYhhAqvYzR3ZQuNFEUWzx5dmLiGjPW8Gqto3xqqCc",
+   "ownerAddress": "ybs3X4pcEUunYbKiws3N3LpX22ttkmAY3ZZhjitVx27wrHWd3QAx9",
    "ownerHash": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
    "ownerScheme": 1,
    "pMint": 1985000,
