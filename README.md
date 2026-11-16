@@ -19,10 +19,11 @@ go silent. **Ycash Yellowback (YED)** is a dollar backed by YEC in vaults (`1 YE
 YEC/USD price comes from mining pools and from **attestors**, the bonded members of Yellowback's
 signer set who sign prices.
 
-> **Status: in development.** The upgrade runs on regtest and on a one-laptop devnet only. No
-> activation height is set on mainnet or testnet, the upgrade has not been adopted by the Ycash
-> Foundation, and there is no external audit. So the Yellowback and vault panels show data on a
-> local test network only.
+> **Status: in development.** The upgrade runs on regtest, on a one-laptop devnet and on the
+> project's fast test network. No activation height is set on mainnet or the public testnet, the
+> upgrade has not been adopted by the Ycash Foundation, and there is no external audit. So the
+> Yellowback and vault panels show data on a test network only (and the fast test network has no
+> YED attestor set, so its Yellowback panels stay empty).
 
 - **What chain-viz shows:** YED prices, supply, collateral, vaults, claims and each Yellowback
   transaction's verdict before a pool includes it; the vault upgrade itself (signer sets, vaults
@@ -33,12 +34,13 @@ signer set who sign prices.
   - **Attestors:** each member's bond and seat weight, evicted members, the bond minimum against
     its floor and cap, and when a departing member's bond unlocks after the exit delay.
   - **Post-quantum:** each vault owner's scheme (SLH-DSA) and 53-character address, Falcon and
-    SLH-DSA signature bytes per block, and post-quantum payees by their `sq…` (plain YEC) address.
-- **Node it needs:** any `ycashd` v4.5.0 or 6.20.0 for the chain and mempool views; for the
-  Yellowback and vault panels, a `ycashd` built from the `upgrade/quantum-vaults` branch of
+    SLH-DSA signature bytes per block, and post-quantum payees by their `sqf…` / `sqs…` (plain YEC) address.
+- **Node it needs:** any `ycashd` (v4.5.0, 6.20.0 or later) for the chain and mempool views; for
+  the Yellowback and vault panels, a `ycashd` built from the `upgrade/vault` branch of
   [ycash-dd](https://github.com/boyfromcave/ycash-dd) or
-  [ycash6](https://github.com/boyfromcave/ycash6) (this line joins `upgrade/vault` at release),
+  [ycash6](https://github.com/boyfromcave/ycash6) (the ycash6 pre-releases, `v6.22.0-beta2` on),
   speaking Yellowback `rpcversion` 9 or 10 (an older node is shown with a warning; see [rpcversion](#rpcversion)).
+  `koganyd`, the Rust node line, is exercised by a report-only CI leg (see [CI](#ci)).
 - **Try it:** the node's devnet starts chain-viz for you; see
   [Run against the devnet](#run-against-the-devnet).
 
@@ -124,7 +126,7 @@ line), `--datadir <dir>` (its `.cookie`, also `regtest/.cookie` and `testnet3/.c
 
 The node needs:
 
-* for the Yellowback and vault panels, a node built from `upgrade/quantum-vaults` with the upgrade and the
+* for the Yellowback and vault panels, a node built from `upgrade/vault` with the upgrade and the
   network's YED attestor set configured (no enabling flag; on regtest
   `-nuparams=6d5b7a31:<h> -yellowbackattestorset=<setid>`). A node without the `yed_*` RPCs is
   watched as chain + mempool only (`nodes[].yellowback = false`) and still counts in the
@@ -251,7 +253,7 @@ fees, median age, transactions older than 2 blocks (a pool filtering it, or a fe
 policy), *partial* = present on some nodes but not all (propagation, or a stock node refusing
 what it does not understand).
 
-**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 9 or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the fee structure (`params.fees`: the protocol fee bands of the debt at `pMint` with the floor and attestor share, the network $/KB rates at the attested tip price with the floor and cap; `params.maxMintCents`; `params.supplyCap` with the per-vault share; rpcversion 8), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C — of the debt at `pMint` from rpcversion 8, of the collateral before — the claim delay), the vault
+**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 9 or 10, or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the fee structure (`params.fees`: the protocol fee bands of the debt at `pMint` with the floor and attestor share, the network $/KB rates at the attested tip price with the floor and cap; `params.maxMintCents`; `params.supplyCap` with the per-vault share; rpcversion 8), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C — of the debt at `pMint` from rpcversion 8, of the collateral before — the claim delay), the vault
 upgrade from `yed_getinfo.upgrade` (status, branch ID, activation height, claim delay, the YED
 attestor set), arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
 `UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
@@ -485,7 +487,7 @@ wallets, which refuse a node whose `rpcversion` is not exactly theirs (they woul
 transactions from shapes they do not know), chain-viz is an observer and never refuses a node:
 an older node still parses (fields chain-viz does not model land in `extra`; it has no
 `upgrade`), and the
-health ribbon shows a warning pill naming the versions when any node is not at 9, or the nodes mix them.
+health ribbon shows a warning pill naming the versions when any node is at neither 9 nor 10, or the nodes mix them.
 
 ## The RPC budget
 
@@ -514,7 +516,9 @@ release binaries for linux x86_64 and macOS arm64 and attaches them to the GitHu
 its publish job can write). A dispatch with `tier=nightly` adds the `devnet` job: a five-node
 regtest devnet of the node line matching the branch, with chain-viz and the UI smoke
 (`qa/ui-smoke.mjs`); its `ycashd` comes only from a push, schedule or dispatch run of that node
-branch's `yellowback-tests` (never a pull-request run), and it saves no cache. Security scanning
+branch's `yellowback-tests` (never a pull-request run), and it saves no cache. A dispatch with
+`tier=kogany` runs the report-only kogany leg (`qa/kogany-leg.sh`): chain-viz with a regtest
+`koganyd` as its only node, and the UI smoke. Security scanning
 is in [SECURITY-CI.md](SECURITY-CI.md). The node's nightly
 (`ycash-dd/.github/workflows/yellowback-tests.yml`) checks out and builds this repository at a
 pinned commit and runs `qa/rpc-tests/yellowback_chainviz.py` against it on a 3-node regtest.
