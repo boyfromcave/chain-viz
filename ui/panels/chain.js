@@ -6,7 +6,7 @@
 // below their fork point), per-node head chips with disagreement highlighted, reorg log, and the
 // three derived risk gauges: fork = disagreeing nodes × seconds disagreeing; orphan = extra blocks
 // at duplicate heights in the last window; reorg = deepest side branch, on a scale of 6 blocks.
-import { h, svg, clear, short, fmtInt, fmtBytes, fmtSecs, fmtTime, tooltip } from '../lib.js';
+import { h, svg, clear, short, fmtInt, fmtBytes, fmtSecs, fmtTime, tooltip, transparentPoolsText } from '../lib.js';
 import { spacing } from './header.js';
 
 const COL = 104, ROW = 74, BW = 92, BH = 58, PAD = 12;
@@ -102,7 +102,7 @@ function renderDag({ store }) {
     badge(miner ? String(miner).slice(0, 8) : 'miner ?', 'miner-bg');
     if (tag) badge(`$${(tag.priceMicroUsd / 1e6).toFixed(3)}`, 'badge-bg');
     else badge('no tag', 'badge-bg');
-    tooltip(g, () => `height ${n.b.height}  ${n.b.status}${n.b.sideStatus ? ' (' + n.b.sideStatus + ', branchlen ' + n.b.branchlen + ')' : ''}\n${n.b.hash}\nprev ${n.b.prev || '?'}\n${n.b.txCount} tx, ${fmtBytes(n.b.size)}${n.b.pqBytes ? ` (post-quantum signatures ${fmtBytes(n.b.pqBytes)}, ${pqShare(n.b)})` : ''}\ntime ${fmtTime(n.b.time)}  seen ${n.b.seen ? fmtTime(n.b.seen) : '?'}\nnodes: ${(n.b.nodes || []).join(', ') || '–'}${miner ? '\nminer ' + miner : ''}${tag ? '\ntag price $' + tag.priceMicroUsd / 1e6 : ''}${n.b.rejected ? '\nREFUSED: YED-invalid (yed_getblockverdict)' : ''}`);
+    tooltip(g, () => `height ${n.b.height}  ${n.b.status}${n.b.sideStatus ? ' (' + n.b.sideStatus + ', branchlen ' + n.b.branchlen + ')' : ''}\n${n.b.hash}\nprev ${n.b.prev || '?'}\n${n.b.txCount} tx, ${fmtBytes(n.b.size)}${n.b.pqBytes ? ` (post-quantum signatures ${fmtBytes(n.b.pqBytes)}, ${pqShare(n.b)})` : ''}\ntime ${fmtTime(n.b.time)}  seen ${n.b.seen ? fmtTime(n.b.seen) : '?'}\nnodes: ${(n.b.nodes || []).join(', ') || '–'}${miner ? '\nminer ' + miner : ''}${tag ? '\ntag price $' + tag.priceMicroUsd / 1e6 : ''}${n.b.rejected ? '\nREFUSED: YED-invalid (yed_getblockverdict)' : ''}${n.b.transparentPools ? '\n' + transparentPoolsText(n.b.transparentPools) : ''}`);
     boxes.append(g);
   }
   el.append(edges, boxes);

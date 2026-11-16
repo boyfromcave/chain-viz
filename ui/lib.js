@@ -127,6 +127,25 @@ export function attestorExit(a, attest, nextHeight) {
   const unlockAt = Math.max(a.statusHeight + attest.bondMaturity, a.bondLocktime ?? 0);
   return { unlockAt, locked: nextHeight === undefined || nextHeight === null ? null : nextHeight < unlockAt };
 }
+// Beta3 (rpcversion 10): a block's transparent value pool by address type (the collector's transparentPools, from
+// getblock's object of that name, every entry read by id). '' on an older node (no such object); a block the node's
+// index does not cover yet says so.
+export const TRANSPARENT_POOL_NAMES = [['transparent_ecc', 'ECC'], ['transparent_pq', 'post-quantum'], ['pq_channel', 'PQ channels'], ['vault', 'vaults'], ['vault_intent', 'vault intents']];
+export function transparentPoolsText(tp) {
+  if (!tp) return '';
+  if (!tp.monitored) return 'transparent by type: not monitored (the node has not indexed this block)';
+  const yec = (zat) => fmtYec(zat / 1e8);
+  const pools = tp.pools || {};
+  const known = new Set(TRANSPARENT_POOL_NAMES.map(([id]) => id));
+  const parts = TRANSPARENT_POOL_NAMES.filter(([id]) => pools[id] !== undefined).map(([id, name]) => {
+    const by = id === 'transparent_pq' ? tp.pqByScheme : [];
+    return `${name} ${yec(pools[id])}${by && by.length ? ` (${by.map((p) => `${p.name} ${yec(p.zat)}`).join(', ')})` : ''}`;
+  });
+  for (const id of Object.keys(pools)) if (!known.has(id)) parts.push(`${id} ${yec(pools[id])}`);
+  const modules = (tp.vaultByModule || []).map((p) => `${p.name} ${yec(p.zat)}`).join(', ');
+  return `transparent by type (YEC${tp.transparentZat !== undefined ? `, of ${yec(tp.transparentZat)}` : ''}): ${parts.join(' · ') || '–'}${modules ? `\n  vaults and intents by module: ${modules}` : ''}`;
+}
+
 export const shortAddr = (a) => (a ? (a.length > 20 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a) : '–');
 
 // One shared tooltip. show(html-free text, x, y).

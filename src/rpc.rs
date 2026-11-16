@@ -533,9 +533,15 @@ pub struct TxOut {
 /// addresses itself (owner addresses, PQPKH payees) in the D-9 form only, so a node before 9, which
 /// spells them the old way, is no longer modelled: the UI models 9 ([`MODELLED_RPC_VERSIONS`]) and
 /// warns on any other or on a mix (it never refuses a node: it is an observer).
-pub const KNOWN_RPC_VERSION: u32 = 9;
+/// 10 is beta3 (the workspace's `docs/plans/beta3/beta3-plan.md` R-1, decision B3-D5):
+/// `getcoinbasetemplatefor`, `getblock` / `getblockchaininfo.transparentPools` (the transparent
+/// pool by address type; `crate::pools`, read by id), input addresses for post-quantum spends,
+/// the `gettransaction` fee, the `-ydf` default. No `yed_*` shape chain-viz reads changed, so a
+/// 9 node (beta2) is modelled as well: it only lacks `transparentPools`. A mix of 9 and 10 still
+/// warns (the nodes are not on one release).
+pub const KNOWN_RPC_VERSION: u32 = 10;
 /// The versions whose shapes chain-viz models without a warning.
-pub const MODELLED_RPC_VERSIONS: [u32; 1] = [9];
+pub const MODELLED_RPC_VERSIONS: [u32; 2] = [9, 10];
 
 /// The first `rpcversion` whose `yed_getfeepayee` takes no `collateralZat`.
 pub const FEEPAYEE_NO_COLLATERAL_FROM: u32 = 8;
