@@ -58,6 +58,11 @@ pub struct BlockInfo {
     /// (`pq::block_pq_bytes`), for blocks fetched in full; the UI shows its share of `size`.
     #[serde(default, rename = "pqBytes", skip_serializing_if = "Option::is_none")]
     pub pq_bytes: Option<u64>,
+    /// Beta3 (rpcversion 10): the block's transparent value pool by address type
+    /// (`getblock`'s `transparentPools`, read by id: `crate::pools`), for blocks fetched in full;
+    /// absent on an older node.
+    #[serde(default, rename = "transparentPools", skip_serializing_if = "Option::is_none")]
+    pub transparent_pools: Option<crate::pools::TransparentPools>,
 }
 
 impl BlockInfo {
@@ -76,6 +81,7 @@ impl BlockInfo {
             txids: b.tx.clone(),
             yb: None,
             pq_bytes: None,
+            transparent_pools: None,
         }
     }
     pub fn event(&self) -> BlockEvent {
@@ -257,6 +263,7 @@ impl ChainModel {
                 txids: Vec::new(),
                 yb: None,
                 pq_bytes: None,
+                transparent_pools: None,
             };
             let ev = info.event();
             self.blocks.insert(t.hash.clone(), info);
@@ -370,6 +377,7 @@ impl ChainModel {
             txids: Vec::new(),
             yb: None,
             pq_bytes: None,
+            transparent_pools: None,
         });
         info.status = BlockStatus::Main;
         if info.prev.is_none() {
@@ -397,6 +405,7 @@ impl ChainModel {
             txids: Vec::new(),
             yb: None,
             pq_bytes: None,
+            transparent_pools: None,
         });
     }
 

@@ -38,7 +38,7 @@ signer set who sign prices.
   Yellowback and vault panels, a `ycashd` built from the `upgrade/quantum-vaults` branch of
   [ycash-dd](https://github.com/boyfromcave/ycash-dd) or
   [ycash6](https://github.com/boyfromcave/ycash6) (this line joins `upgrade/vault` at release),
-  speaking Yellowback `rpcversion` 9 (an older node is shown with a warning; see [rpcversion](#rpcversion)).
+  speaking Yellowback `rpcversion` 9 or 10 (an older node is shown with a warning; see [rpcversion](#rpcversion)).
 - **Try it:** the node's devnet starts chain-viz for you; see
   [Run against the devnet](#run-against-the-devnet).
 
@@ -445,7 +445,14 @@ YecWallet or the CLI.
 
 ## rpcversion
 
-chain-viz models `yed_*` at **rpcversion 9** (`KNOWN_RPC_VERSION` and `MODELLED_RPC_VERSIONS` in `src/rpc.rs`):
+chain-viz models `yed_*` at **rpcversion 9 and 10** (`KNOWN_RPC_VERSION` and `MODELLED_RPC_VERSIONS` in
+`src/rpc.rs`; a mix of the two across the nodes warns). rpcversion 10 is beta3 (the workspace's
+`docs/plans/beta3/beta3-plan.md` R-1, decision B3-D5): no `yed_*` shape chain-viz reads changed; the one addition it
+shows is `getblock`'s `transparentPools`, the transparent value pool split by address type (`src/pools.rs`, every entry
+read by `id`, `pqscheme` or `module`, never by position): the block tooltip gives `transparent_ecc`,
+`transparent_pq` (with `pq_by_scheme`), `pq_channel`, `vault`, `vault_intent` and `vault_by_module`, says "not
+monitored" for a block the node's index does not cover yet, and shows nothing on a 9 node, which has no such object.
+chain-viz reads no `valuePools` entry. rpcversion 9 is
 decision D-9 (the workspace's `docs/plans/yellowback-pq-prefix-rpc-delta.md` §4.12, quantum spec §4.1) puts the
 post-quantum scheme in a 3-byte address version, so PQ addresses read `sqf…`/`sqs…` (testnet `tqf…`/`tqs…`, regtest
 `rqf…`/`rqs…`) and owners `ybf…`/`ybs…` (`ytf…`/`yts…`, `yrf…`/`yrs…`); `yed_getinfo.params.pqAddressVersion` and

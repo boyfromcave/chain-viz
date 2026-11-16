@@ -472,7 +472,7 @@
   },
   "protectedByIndex": true,
   "rebuilt": false,
-  "rpcversion": 9,
+  "rpcversion": 10,
   "startHeight": 103,
   "supplyCapReached": false,
   "unhealthyReason": "",

@@ -346,6 +346,9 @@ impl Collector {
             if info.pq_bytes.is_none() {
                 info.pq_bytes = Some(crate::pq::block_pq_bytes(b));
             }
+            if info.transparent_pools.is_none() {
+                info.transparent_pools = crate::pools::transparent_pools(&b.extra);
+            }
             let ev = m.vault.on_block(b);
             drop(m);
             self.bus.publish_all(ev);
