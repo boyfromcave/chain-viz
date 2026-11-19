@@ -6,7 +6,7 @@
 // builds its own <section> on init, fetches GET /api/revenue (by=block, payoutKey, attestor)
 // once per new block, renders plain SVG + tables. Every YEC figure carries its USD at that
 // height's pMint (C-9), labelled "at pMint". Field names are the API's (src/model/revenue.rs).
-import { h, svg, clear, tooltip } from '../lib.js';
+import { h, svg, clear, tooltip, PAYOUT_SCHEMES, isPqScheme } from '../lib.js';
 
 const $ = (id) => document.getElementById(id);
 const yec = (zat) => (zat === null || zat === undefined ? '–' : (zat / 1e8).toLocaleString(undefined, { maximumFractionDigits: 4 }));
@@ -128,8 +128,9 @@ function renderPools(p) {
   for (const g of p.groups || []) {
     const m = g.miner || {};
     t.append(h('tr', {},
-      h('td', { class: 'mono', title: `${g.payee}${g.aliases?.length ? '\ncoinbase addresses: ' + g.aliases.join(', ') : ''}` }, addr(g.payee), g.aliases?.length ? h('span', { class: 'muted' }, ` +${g.aliases.length}`) : null),
-      h('td', {}, String(g.blocksMined)), h('td', {}, String(g.tags)), h('td', {}, String(g.timesSelected)),
+      h('td', { class: 'mono', title: `${g.payee}${g.payoutScheme ? '\npayout scheme ' + g.payoutScheme : ''}${g.aliases?.length ? '\ncoinbase addresses: ' + g.aliases.join(', ') : ''}` }, isPqScheme(g.payoutScheme) ? h('span', { class: 'rv-pq' }, PAYOUT_SCHEMES[g.payoutScheme], ' ') : null, addr(g.payee), g.aliases?.length ? h('span', { class: 'muted' }, ` +${g.aliases.length}`) : null),
+      // rpcversion 11 (beta4): tags by version, v1 (a P2PKH payout key) and v2 (a post-quantum one)
+      h('td', { title: 'v1: a P2PKH payout key · v2: a post-quantum payout key (rpcversion 11)' }, String(g.tags), g.tagsV2 ? h('span', { class: 'muted' }, ` (v2 ${g.tagsV2})`) : null), h('td', {}, String(g.timesSelected)),
       h('td', {}, h('span', { class: 'rv-barcell' }, h('i', { style: `width:${(100 * g.enforcefee.zat) / max}%;background:${SLOT.enforcefee}` }), `${yec(g.enforcefee.zat)} YEC`)),
       h('td', {}, usd(g.enforcefee.usd)),
       h('td', {}, g.perTagZat === null || g.perTagZat === undefined ? '–' : yec(g.perTagZat)), h('td', {}, g.perBlockZat === null || g.perBlockZat === undefined ? '–' : yec(g.perBlockZat)),

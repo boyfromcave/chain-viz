@@ -146,6 +146,58 @@ export function transparentPoolsText(tp) {
   return `transparent by type (YEC${tp.transparentZat !== undefined ? `, of ${yec(tp.transparentZat)}` : ''}): ${parts.join(' · ') || '–'}${modules ? `\n  vaults and intents by module: ${modules}` : ''}`;
 }
 
+// Beta4 (rpcversion 11, tag v2; the workspace's docs/plans/beta4/price-feed.md §4.3, D-8, D-10): a pool whose payout key
+// is post-quantum emits a v2 coinbase tag; yed_gettag gains `version` (1 or 2) and `payoutScheme`. A node before 11
+// reports version 1 and no scheme. Every payee and payout address may be a plain post-quantum address (sqf…/sqs…).
+export const PAYOUT_SCHEMES = { p2pkh: 'P2PKH', 'slh-dsa-sha2-128s': 'SLH-DSA', 'fn-dsa-512': 'FN-DSA' };
+// The scheme of an address by its D-9 prefix: the third character of a plain-YEC post-quantum address
+// (sq/tq/rq + f|s, 53 characters) names it; anything else is null (a P2PKH or a not-yet-encoded key).
+export function addressScheme(a) {
+  const m = typeof a === 'string' && a.length === 53 ? /^[str]q([fs])/.exec(a) : null;
+  return m ? (m[1] === 'f' ? 'fn-dsa-512' : 'slh-dsa-sha2-128s') : null;
+}
+export const isPqScheme = (s) => s === 'slh-dsa-sha2-128s' || s === 'fn-dsa-512';
+// A tag's version and scheme in a few characters: 'v1', 'v2 SLH-DSA', 'v2 FN-DSA'; '' without a tag.
+export function tagShort(tag) {
+  if (!tag || tag.found === false) return '';
+  const v = tag.version ?? 1;
+  const scheme = tag.payoutScheme || addressScheme(tag.payoutAddress) || (v === 1 ? 'p2pkh' : null);
+  return v === 1 ? 'v1' : `v${v} ${PAYOUT_SCHEMES[scheme] || scheme || '?'}`;
+}
+// The quote cadence (D-11): a pool calls yed_setquote every 60–75 s, no heartbeat, no change threshold. A node's quote
+// age (yed_getinfo.miner.quoteAgeSeconds) beyond twice the slowest step means a missed update.
+export const QUOTE_CADENCE = { min: 60, max: 75 };
+export function quoteAges(yedInfo) {
+  return Object.entries(yedInfo || {}).filter(([, i]) => i?.miner && i.miner.payoutAddress).map(([node, i]) => {
+    const age = i.miner.quoteAgeSeconds;
+    return { node, kind: i.miner.quoteKind, age: age ?? null, payoutAddress: i.miner.payoutAddress, scheme: addressScheme(i.miner.payoutAddress) || 'p2pkh', late: age === null || age === undefined ? null : age > 2 * QUOTE_CADENCE.max };
+  });
+}
+// The tags of the newest main-chain blocks: how many carry one, by version and scheme, and per payout key the
+// median seconds between the block times of its quote changes (a price that differs from that key's previous tag).
+export function tagStats(blocks) {
+  const out = { blocks: 0, tagged: 0, v1: 0, v2: 0, schemes: {}, keys: {} };
+  const sorted = (blocks || []).filter((b) => b.yb && b.yb.tagged).slice().sort((a, b) => a.height - b.height);
+  for (const b of sorted) {
+    out.blocks += 1;
+    const t = b.yb.tag; if (!t || !t.found) continue;
+    out.tagged += 1;
+    if ((t.version ?? 1) === 2) out.v2 += 1; else out.v1 += 1;
+    const scheme = t.payoutScheme || addressScheme(t.payoutAddress) || 'p2pkh';
+    out.schemes[scheme] = (out.schemes[scheme] || 0) + 1;
+    const k = (out.keys[t.payoutAddress] ??= { tags: 0, changes: [], last: null, scheme });
+    k.tags += 1; k.scheme = scheme;
+    if (k.last && k.last.price !== t.priceMicroUsd) k.changes.push(b.time - k.last.changeTime);
+    if (!k.last || k.last.price !== t.priceMicroUsd) k.last = { price: t.priceMicroUsd, changeTime: b.time };
+  }
+  for (const k of Object.values(out.keys)) {
+    const c = k.changes.slice().sort((a, b) => a - b);
+    k.medianChangeSec = c.length ? c[Math.floor(c.length / 2)] : null;
+    delete k.last;
+  }
+  return out;
+}
+
 export const shortAddr = (a) => (a ? (a.length > 20 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a) : '–');
 
 // One shared tooltip. show(html-free text, x, y).
