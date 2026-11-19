@@ -36,6 +36,11 @@ use crate::source::{Source, Wake};
 pub const BACKFILL: u64 = 20;
 /// `getchaintips` is refreshed on every head move and every this many polls otherwise.
 pub const TIPS_EVERY: u64 = 10;
+/// A node that answered `yed_getinfo` / `vault_getinfo` with "method not found" is asked again
+/// every this many polls, and after any error (a restart): on regtest and the devnet Yellowback
+/// goes live by a restart with `-yellowbackattestorset` after the Vault activation (U-22), so a
+/// node chain-viz first saw as stock may carry the module a minute later.
+pub const REPROBE_EVERY: u64 = 60;
 /// Unenriched blocks a `yed_*` node catches up on per poll.
 pub const ENRICH_PER_POLL: usize = 8;
 
@@ -214,6 +219,9 @@ impl Collector {
                         v.vault = st.vault_enabled;
                     }
                     Err(e) => {
+                        // the node may come back with other flags (a restart): ask about yed_* and vault_* again
+                        st.yed_enabled = st.yed_enabled.filter(|on| *on);
+                        st.vault_enabled = st.vault_enabled.filter(|on| *on);
                         if v.up || v.error.is_none() {
                             warn!(node = %node, "{}", e);
                             self.bus.publish(None, Some(node.clone()), EventKind::Note { text: format!("node {}: {}", node, e) });
@@ -237,6 +245,10 @@ impl Collector {
                 m.vault.set_chain(&info.chain);
             }
             st.chain_name = Some(info.chain);
+        }
+        if st.ticks > 0 && st.ticks % REPROBE_EVERY == 0 {
+            st.yed_enabled = st.yed_enabled.filter(|on| *on);
+            st.vault_enabled = st.vault_enabled.filter(|on| *on);
         }
         if st.yed_enabled.is_none() {
             // Know before the first block walk whether this node can enrich (yed_gettag,

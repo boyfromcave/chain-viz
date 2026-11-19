@@ -6,7 +6,7 @@
 // builds its own <section> on init, fetches GET /api/revenue (by=block, payoutKey, attestor)
 // once per new block, renders plain SVG + tables. Every YEC figure carries its USD at that
 // height's pMint (C-9), labelled "at pMint". Field names are the API's (src/model/revenue.rs).
-import { h, svg, clear, tooltip } from '../lib.js';
+import { h, svg, clear, tooltip, PAYOUT_SCHEMES, isPqScheme } from '../lib.js';
 
 const $ = (id) => document.getElementById(id);
 const yec = (zat) => (zat === null || zat === undefined ? '–' : (zat / 1e8).toLocaleString(undefined, { maximumFractionDigits: 4 }));
@@ -93,7 +93,9 @@ function renderTiles(b, s) {
 const M = { l: 56, r: 12, t: 10, b: 22 };
 function ticks(lo, hi, n) { const raw = (hi - lo) / n, p = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / p, step = (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(v); return out; }
 function renderBlocks(b) {
-  const el = clear($('rv-blocks')); const rows = b.groups || [];
+  // the bars follow the range even when the fetch was wider: the first one runs before any render knows the tip
+  // (from=0, the whole window) and stands until the next block
+  const el = clear($('rv-blocks')); const rows = local.range === 'all' ? b.groups || [] : (b.groups || []).slice(-Number(local.range));
   if (!rows.length) { el.append(svg('text', { class: 'empty', x: 20, y: 20 }, 'no blocks in range yet')); return; }
   const W = el.clientWidth || 800, H = 220; el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const stockOf = (r) => r.subsidy.zat + r.netfee.zat, ybOf = (r) => r.enforcefee.zat + r.attestfee.zat;
@@ -128,8 +130,9 @@ function renderPools(p) {
   for (const g of p.groups || []) {
     const m = g.miner || {};
     t.append(h('tr', {},
-      h('td', { class: 'mono', title: `${g.payee}${g.aliases?.length ? '\ncoinbase addresses: ' + g.aliases.join(', ') : ''}` }, addr(g.payee), g.aliases?.length ? h('span', { class: 'muted' }, ` +${g.aliases.length}`) : null),
-      h('td', {}, String(g.blocksMined)), h('td', {}, String(g.tags)), h('td', {}, String(g.timesSelected)),
+      h('td', { class: 'mono', title: `${g.payee}${g.payoutScheme ? '\npayout scheme ' + g.payoutScheme : ''}${g.aliases?.length ? '\ncoinbase addresses: ' + g.aliases.join(', ') : ''}` }, isPqScheme(g.payoutScheme) ? h('span', { class: 'rv-pq' }, PAYOUT_SCHEMES[g.payoutScheme], ' ') : null, addr(g.payee), g.aliases?.length ? h('span', { class: 'muted' }, ` +${g.aliases.length}`) : null),
+      // rpcversion 11 (beta4): tags by version, v1 (a P2PKH payout key) and v2 (a post-quantum one)
+      h('td', { title: 'v1: a P2PKH payout key · v2: a post-quantum payout key (rpcversion 11)' }, String(g.tags), g.tagsV2 ? h('span', { class: 'muted' }, ` (v2 ${g.tagsV2})`) : null), h('td', {}, String(g.timesSelected)),
       h('td', {}, h('span', { class: 'rv-barcell' }, h('i', { style: `width:${(100 * g.enforcefee.zat) / max}%;background:${SLOT.enforcefee}` }), `${yec(g.enforcefee.zat)} YEC`)),
       h('td', {}, usd(g.enforcefee.usd)),
       h('td', {}, g.perTagZat === null || g.perTagZat === undefined ? '–' : yec(g.perTagZat)), h('td', {}, g.perBlockZat === null || g.perBlockZat === undefined ? '–' : yec(g.perBlockZat)),

@@ -125,6 +125,15 @@ if (!isStatic) {
   // the health ribbon carries the upgrade, never the retired enforcement pills (upgrade plan §6)
   const ribbon = el('yb-ribbon').textContent;
   /enforcing|valve|sunset|abandoned|signals/.test(ribbon) ? fail(`health ribbon still shows retired state: ${ribbon.slice(0, 160)}`) : ok(`health ribbon: ${ribbon.slice(0, 140)}`);
+  // beta4: rpcversion 9, 10 and 11 are modelled, alone or mixed: no warning pill unless a node reports another
+  const yb = await (await fetch(base + '/api/yellowback')).json();
+  const versions = [...new Set(Object.values(yb.yedInfo || {}).map((i) => i.rpcversion))];
+  const warned = el('yb-ribbon').children.some((c) => c.attrs?.['data-level'] === 'warning' && /rpcversion/.test(c.textContent));
+  const modelled = versions.every((v) => [9, 10, 11].includes(v));
+  warned === !modelled ? ok(`health ribbon: rpcversion ${versions.join('/') || '–'} ${warned ? 'warned (not modelled)' : 'modelled, no warning'}`) : fail(`health ribbon: rpcversion ${versions.join('/')} warning ${warned}, modelled ${modelled}`);
+  const tagged = (yb.blocks || []).filter((b) => b.yb?.tag?.found).length;
+  const quotes = /quotes \d+\/\d+ tagged/.test(ribbon);
+  !tagged || quotes ? ok(`health ribbon: ${tagged} tagged block(s)${quotes ? ', quotes state ' + (ribbon.match(/quotes [^·]*· v2 \d+/) || [''])[0] : ''}`) : fail(`health ribbon: ${tagged} tagged blocks but no quotes state`);
 }
 // reconnect path: closing the socket must schedule a reconnect with backoff
 if (isStatic) {

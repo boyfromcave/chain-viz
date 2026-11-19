@@ -504,7 +504,7 @@ pub struct TxOut {
     pub script_pub_key: Value,
 }
 
-// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 7 on upgrade/quantum-vaults) ----
+// ---- yed_* shapes (doc/yellowback-rpc-contract.json, rpcversion 11 on upgrade/vault) ----
 
 /// The `rpcversion` whose shapes the typed structs below follow. chain-viz is an observer and
 /// keeps parsing an older node (its typed fields default and it has no `upgrade`); the UI says
@@ -537,11 +537,18 @@ pub struct TxOut {
 /// `getcoinbasetemplatefor`, `getblock` / `getblockchaininfo.transparentPools` (the transparent
 /// pool by address type; `crate::pools`, read by id), input addresses for post-quantum spends,
 /// the `gettransaction` fee, the `-ydf` default. No `yed_*` shape chain-viz reads changed, so a
-/// 9 node (beta2) is modelled as well: it only lacks `transparentPools`. A mix of 9 and 10 still
-/// warns (the nodes are not on one release).
-pub const KNOWN_RPC_VERSION: u32 = 10;
+/// 9 node (beta2) is modelled as well: it only lacks `transparentPools`.
+/// 11 is beta4's tag v2 (the workspace's `docs/plans/beta4/price-feed.md` §4.3, D-8, D-10): a pool
+/// with a post-quantum payout key emits a 49-byte v2 coinbase tag beside the 36-byte v1 one;
+/// `yed_gettag` gains `version` (1 or 2) and `payoutScheme` (`"p2pkh"`, `"slh-dsa-sha2-128s"`,
+/// `"fn-dsa-512"`), and every payee or payout address may be a plain post-quantum address of the
+/// network (`sqf…`/`sqs…`). Field names are unchanged and chain-viz relays the tag untyped, so a 9
+/// or 10 node is modelled as well (its tags are all v1, without `payoutScheme`).
+/// Any mix of modelled versions is shown without a warning (a rollout passes through one: the
+/// UI names the versions); only a version outside [`MODELLED_RPC_VERSIONS`] warns.
+pub const KNOWN_RPC_VERSION: u32 = 11;
 /// The versions whose shapes chain-viz models without a warning.
-pub const MODELLED_RPC_VERSIONS: [u32; 2] = [9, 10];
+pub const MODELLED_RPC_VERSIONS: [u32; 3] = [9, 10, 11];
 
 /// The first `rpcversion` whose `yed_getfeepayee` takes no `collateralZat`.
 pub const FEEPAYEE_NO_COLLATERAL_FROM: u32 = 8;
@@ -920,6 +927,11 @@ mod tests {
         assert_eq!(verdict.verdict, "vault-spend-short-burn");
         assert!(!verdict.extra.contains_key("enforcementOn"));
         assert_eq!(verdict.transactions.len(), 1);
+        // rpcversion 11 (beta4 tag v2): yed_gettag carries version and payoutScheme; chain-viz relays the
+        // tag untyped, so only the shape is held here (v1 P2PKH from the contract, v2 and not-found by its text)
+        assert_eq!((v["yed_gettag"]["version"].clone(), v["yed_gettag"]["payoutScheme"].clone()), (json!(1), json!("p2pkh")));
+        assert_eq!((v["yed_gettag_v2"]["version"].clone(), v["yed_gettag_v2"]["payoutScheme"].clone()), (json!(2), json!("slh-dsa-sha2-128s")));
+        assert!(v["yed_gettag_none"].get("version").is_none() && v["yed_gettag_none"]["found"] == json!(false));
     }
 
     #[test]

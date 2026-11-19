@@ -7,7 +7,7 @@
 // renders with plain SVG. Follows the panel contract of app.js: `init(store)`, `render(ctx)`.
 // Field names are the node's (doc/yellowback-rpc-contract.json): pFast/pMid/pSlow/pMint/pClaim
 // in micro-USD, supplyCents, collateralZat, globalRatioBps, haltMask, claimHeight, …
-import { h, svg, clear, fmtInt, tooltip, pqSchemeShort, shortAddr, PQ_SCHEMES, feeParamsText, bondMinText, seatRuleText, seatWeightZat, attestorExit } from '../lib.js';
+import { h, svg, clear, fmtInt, tooltip, pqSchemeShort, shortAddr, PQ_SCHEMES, feeParamsText, bondMinText, seatRuleText, seatWeightZat, attestorExit, PAYOUT_SCHEMES, addressScheme, isPqScheme, quoteAges, tagStats, QUOTE_CADENCE } from '../lib.js';
 
 const $ = (id) => document.getElementById(id);
 const usd = (micro) => (micro === null || micro === undefined ? '–' : `$${(micro / 1e6).toFixed(4)}`);
@@ -22,9 +22,11 @@ const pct = (bps) => (bps === null || bps === undefined ? '–' : `${(bps / 100)
 // debt at pMint, network $/KB at the tip price), maxMintCents, supplyCap, pMint on every vault row; feeMinZat /
 // feeBps gone. rpcversion 9 (D-9): post-quantum addresses carry the scheme in a 3-byte version (sqf…/sqs…,
 // ybf…/ybs…), the form chain-viz encodes owner addresses and PQ payees in. rpcversion 10 (beta3): no yed_* shape
-// change (getblock.transparentPools, shown in the chain panel's block tooltip). 9 and 10 are modelled; any other
-// version (an older node spells PQ addresses the pre-D-9 way) or a mix of them warns.
-const KNOWN_RPCVERSIONS = [9, 10];   // 10: beta3 (transparentPools; no yed_* shape change)
+// change (getblock.transparentPools, shown in the chain panel's block tooltip). rpcversion 11 (beta4): tag v2, a
+// post-quantum payout key in the coinbase tag (yed_gettag.version / payoutScheme), PQ payees in every payee field.
+// 9, 10 and 11 are modelled, alone or mixed (a rollout passes through a mix: the ribbon names the versions without
+// a warning); any other version (an older node spells PQ addresses the pre-D-9 way) warns.
+const KNOWN_RPCVERSIONS = [9, 10, 11];   // 11: beta4 (tag v2, PQ payees; no field renamed)
 function thresholds(info) {
   const p = info?.params || {};
   return { theta: p.claimThresholdBps ?? 11000, emerg: p.attest?.emergencyRatioBps ?? 10500, inTerm: p.inTermClaims === true, fees: p.earlyRedeemFeeBps || [], claimDelay: p.claimDelay };
@@ -115,13 +117,15 @@ function renderRibbon(y, info, stats, d) {
     pill(info.healthy ? 'healthy' : `unhealthy ${info.unhealthyReason || ''}`, info.healthy, info.healthy ? 'good' : 'critical'),
     // rpcversion 4 (hardening H-1): with mintRequiresArmed a mint at an unarmed R is invalid (mint-halted-unarmed)
     pill(info.mintRequiresArmed ? 'mint requires ARMED' : 'mint without ARMED', !!info.mintRequiresArmed, 'good'),
-    versions.length === 1 && KNOWN_RPCVERSIONS.includes(versions[0]) ? null : pill(`rpcversion ${versions.join('/')} (chain-viz models ${KNOWN_RPCVERSIONS.join(' or ')})`, true, 'warning'),
+    versionPill(versions),
     h('span', { class: 'yb-sep' }),
     h('span', { class: 'yb-state' }, h('b', {}, 'upgrade'), up ? ` ${up.name} ${(up.status || '?').toUpperCase()} ` : ' – ', h('span', { class: 'muted' }, up ? `branch ${up.branchId} · from ${up.activationHeight} · claim delay ${up.claimDelay} · attestor set ${(up.attestorSetId || '–').slice(0, 10)}…` : 'no upgrade object (a node before rpcversion 5)')),
     claimsState(info),
     pqState(info),
     feesState(info),
     attestRulesState(info),
+    attestorSetState(info, y),
+    quotesState(d),
     h('span', { class: 'yb-state' }, h('b', {}, 'arming'), ` ${att.status || '?'} `, h('span', { class: 'muted' }, `${att.seatedCount ?? '–'} seated · pool ${att.poolSize ?? '–'} (fresh ${att.poolFresh ?? '–'}) · trigger ${att.triggerHeight ?? '–'} · arm ${att.armHeight ?? '–'}`)),
     h('span', { class: 'yb-state' }, h('b', {}, 'minting'), ` ${stats ? (stats.mintingAllowed ? 'allowed' : 'halted') : '–'} `, h('span', { class: 'muted' }, mintingWhy(info, stats))),
     noPriceState(y.noPrice),
@@ -130,6 +134,54 @@ function renderRibbon(y, info, stats, d) {
   const alarm = $('yb-alarm');
   if (y.statehash_agree === false) { alarm.hidden = false; clear(alarm).append(h('b', {}, 'STATE HASH MISMATCH'), ` healthy nodes on the same tip disagree on yed_getstatehash: `, ...Object.entries(y.statehash).map(([n, v]) => h('code', {}, `${n}:${v.statehash.slice(0, 10)} `))); }
   else alarm.hidden = true;
+}
+
+// The nodes' rpcversion: nothing when they all report one modelled version; a plain pill naming the versions when they
+// mix modelled ones (a rollout, beta3 10 beside beta4 11); a warning only for a version chain-viz does not model.
+function versionPill(versions) {
+  const sorted = versions.slice().sort((a, b) => a - b);
+  if (sorted.length && sorted.every((v) => KNOWN_RPCVERSIONS.includes(v))) return sorted.length === 1 ? null : pill(`rpcversion ${sorted.join(' + ')}`, true, '');
+  return pill(`rpcversion ${sorted.join('/')} (chain-viz models ${KNOWN_RPCVERSIONS.join(', ')})`, true, 'warning');
+}
+
+// Beta4 (rpcversion 11): the bonded attestor set YED reads (yed_getinfo.upgrade.attestorSetId; null = YED off, the
+// fast testnet before its ceremony) and its members from yed_listattestors: how many are bonded and eligible, their
+// total bond and how many pay to a key the module seats. The set's own parameters (bondmin, livenesswindow,
+// maturity) are in the vault panel's signer-set row marked ★ YED.
+function attestorSetState(info, y) {
+  const id = info?.upgrade?.attestorSetId ?? info?.params?.attestorSetId;
+  if (info?.upgrade === undefined) return null;
+  if (!id) return h('span', { class: 'yb-state', title: 'yed_getinfo.upgrade.attestorSetId is null: no attestor set is compiled in, so YED is off on this network' }, h('b', {}, 'attestor set'), ' none ', h('span', { class: 'muted' }, '(YED off)'));
+  const rows = y.attestors || [];
+  const bonded = rows.filter((a) => (a.bondZat || 0) > 0 && !a.bondFrozen && a.status !== 'WITHDRAWN');
+  const eligible = rows.filter((a) => a.status === 'ELIGIBLE').length;
+  const seated = rows.filter((a) => a.seated).length;
+  const bond = bonded.reduce((t, a) => t + (a.bondZat || 0), 0);
+  const frozen = rows.filter((a) => a.bondFrozen).length;
+  return h('span', { class: 'yb-state', title: `attestor set ${id}
+${bonded.length} bonded members, ${eligible} ELIGIBLE, ${seated} seated, ${frozen} frozen bonds
+total bond ${yec(bond)} YEC (yed_listattestors.bondZat)` },
+    h('b', {}, 'attestor set'), ` ${id.slice(0, 10)}… `, h('span', { class: 'muted' }, `${bonded.length} bonded · ${eligible} eligible · ${seated} seated · ${yec(bond)} YEC bonded${frozen ? ` · ${frozen} frozen` : ''}`));
+}
+
+// Beta4 (rpcversion 11, D-11): the pools' quotes. Per node with a payout key, its quote age (yed_getinfo.miner.
+// quoteAgeSeconds; a pool re-quotes every 60–75 s, an age past twice that is late) and its payee's scheme; over the
+// newest blocks, the share carrying a tag by version (v1 P2PKH, v2 post-quantum) and per key the median seconds
+// between its quote changes.
+function quotesState(d) {
+  const ages = quoteAges(d.yedInfo), ts = tagStats(d.blocks);
+  if (!ages.length && !ts.tagged) return null;
+  const schemes = Object.entries(ts.schemes).map(([k, n]) => `${PAYOUT_SCHEMES[k] || k} ${n}`).join(' · ');
+  const keyLines = Object.entries(ts.keys).map(([k, v]) => `${k} (${PAYOUT_SCHEMES[v.scheme] || v.scheme}): ${v.tags} tags, quote changes every ${v.medianChangeSec === null ? '–' : v.medianChangeSec + ' s'} (median)`);
+  const ageLines = ages.map((a) => `node ${a.node}: ${a.kind} quote age ${a.age === null ? '– (none held)' : a.age + ' s'}${a.late ? ' LATE' : ''} · payee ${PAYOUT_SCHEMES[a.scheme] || a.scheme} ${a.payoutAddress}`);
+  const late = ages.filter((a) => a.late).length;
+  return h('span', { class: 'yb-state', 'data-late': late ? '1' : '0', title: `quote cadence ${QUOTE_CADENCE.min}–${QUOTE_CADENCE.max} s (yed_setquote, D-11)
+${ageLines.join('\n') || 'no node with a payout key'}
+last ${ts.blocks} blocks: ${ts.tagged} tagged (v1 ${ts.v1}, v2 ${ts.v2})${schemes ? ' · ' + schemes : ''}
+${keyLines.join('\n')}` },
+    h('b', {}, 'quotes'), ` ${ts.tagged}/${ts.blocks} tagged `,
+    h('span', { class: 'muted' }, `v1 ${ts.v1} · v2 ${ts.v2}${schemes ? ' (' + schemes + ')' : ''}${ages.length ? ' · age ' + ages.map((a) => `${a.node}:${a.age === null ? '–' : a.age + 's'}`).join(' ') : ''}`),
+    late ? h('b', { class: 'yb-bad' }, ` ${late} late`) : null);
 }
 
 // rpcversion 7 (the quantum line): yed_getinfo.params.pq, the owner schemes MINT-3 admits at the next block, the
@@ -407,6 +459,13 @@ function ownerCell(v) {
     h('span', { class: 'yb-pq' }, pqSchemeShort(v.ownerScheme)), ' ', shortAddr(v.ownerAddress));
 }
 
+// A fee payee (rpcversion 11: a P2PKH or a plain post-quantum address of the network); a PQ payee carries its scheme.
+function payeeCell(p) {
+  if (!p) return h('td', { class: 'mono' }, '');
+  const s = addressScheme(p);
+  return h('td', { class: 'mono', title: `payee ${p}${s ? ' (post-quantum, ' + PAYOUT_SCHEMES[s] + ')' : ''}` }, isPqScheme(s) ? h('span', { class: 'yb-pq' }, PAYOUT_SCHEMES[s]) : null, isPqScheme(s) ? ' ' : null, p.slice(0, 10) + '…');
+}
+
 // The void tile's sub-line: how many listed VOID vaults are unarmed mints (H-1).
 function voidSub(y) {
   const unarmed = (y.vaults || []).filter((v) => v.status === 'VOID' && v.voidReason === 'mint-halted-unarmed').length;
@@ -462,7 +521,7 @@ function renderTxs(y, s, d) {
       h('td', { class: 'mono' }, tx.txid.slice(0, 12) + '…'),
       h('td', {}, h('span', { class: 'yb-type', style: `--c:${typeColour(tx.type, tx.path)}` }, txLabel(tx))),
       h('td', {}, tx.path || ''), h('td', {}, h('span', { class: 'yb-status', 'data-s': bad ? 'BAD' : 'OK', title: VERDICT_TEXT[tx.verdict] || '' }, tx.verdict || (tx.wouldBeRejected === undefined ? '…' : ''))),
-      h('td', {}, yed(tx.yedIn)), h('td', {}, yed(tx.yedOut)), h('td', {}, yed(tx.burned)), h('td', {}, yec(tx.feeZat)), h('td', { class: 'mono' }, tx.payee ? tx.payee.slice(0, 10) + '…' : ''),
+      h('td', {}, yed(tx.yedIn)), h('td', {}, yed(tx.yedOut)), h('td', {}, yed(tx.burned)), h('td', {}, yec(tx.feeZat)), payeeCell(tx.payee),
       h('td', {}, tx.attestFeeZat ? yec(tx.attestFeeZat) : ''), h('td', { class: 'mono' }, tx.attestPayee ? tx.attestPayee.slice(0, 10) + '…' : ''),
       h('td', {}, mp ? (tx.wouldBeRejected === true ? h('b', { class: 'yb-bad' }, 'would be rejected') : tx.wouldBeRejected === false ? 'would confirm' : '') : '')));
   }

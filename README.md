@@ -35,11 +35,14 @@ signer set who sign prices.
     its floor and cap, and when a departing member's bond unlocks after the exit delay.
   - **Post-quantum:** each vault owner's scheme (SLH-DSA) and 53-character address, Falcon and
     SLH-DSA signature bytes per block, and post-quantum payees by their `sqf…` / `sqs…` (plain YEC) address.
+  - **Price tags (beta4):** each block's coinbase tag, v1 (a P2PKH payout key) or v2 (a post-quantum
+    payout key, with its scheme), the pools' quote cadence (each quoting node's quote age and how
+    often each key's quote changes), and the bonded attestor set YED reads.
 - **Node it needs:** any `ycashd` (v4.5.0, 6.20.0 or later) for the chain and mempool views; for
   the Yellowback and vault panels, a `ycashd` built from the `upgrade/vault` branch of
   [ycash-dd](https://github.com/boyfromcave/ycash-dd) or
   [ycash6](https://github.com/boyfromcave/ycash6) (the ycash6 pre-releases, `v6.22.0-beta2` on),
-  speaking Yellowback `rpcversion` 9 or 10 (an older node is shown with a warning; see [rpcversion](#rpcversion)).
+  speaking Yellowback `rpcversion` 9, 10 or 11 (an older node is shown with a warning; see [rpcversion](#rpcversion)).
   `koganyd`, the Rust node line, is exercised by a report-only CI leg (see [CI](#ci)).
 - **Try it:** the node's devnet starts chain-viz for you; see
   [Run against the devnet](#run-against-the-devnet).
@@ -253,7 +256,7 @@ fees, median age, transactions older than 2 blocks (a pool filtering it, or a fe
 policy), *partial* = present on some nodes but not all (propagation, or a stock node refusing
 what it does not understand).
 
-**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 9 or 10, or the nodes mix them, the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the fee structure (`params.fees`: the protocol fee bands of the debt at `pMint` with the floor and attestor share, the network $/KB rates at the attested tip price with the floor and cap; `params.maxMintCents`; `params.supplyCap` with the per-vault share; rpcversion 8), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C — of the debt at `pMint` from rpcversion 8, of the collateral before — the claim delay), the vault
+**Yellowback health** — a state ribbon (`healthy`, `mintRequiresArmed`, a warning pill when a node reports an `rpcversion` other than 9, 10 or 11, and a plain pill naming the versions when the nodes mix modelled ones (a rollout), the post-quantum parameters (`params.pq`: owner schemes, the Falcon height, `feeRateZatPerKB`; rpcversion 7), the fee structure (`params.fees`: the protocol fee bands of the debt at `pMint` with the floor and attestor share, the network $/KB rates at the attested tip price with the floor and cap; `params.maxMintCents`; `params.supplyCap` with the per-vault share; rpcversion 8), the claim rule (`claims IN TERM` when `params.inTermClaims`, θ `claimThresholdBps`, the early-redeem fee `earlyRedeemFeeBps` per class A/B/C — of the debt at `pMint` from rpcversion 8, of the collateral before — the claim delay), the vault
 upgrade from `yed_getinfo.upgrade` (status, branch ID, activation height, claim delay, the YED
 attestor set), arming `UNARMED → TRIGGERED → ARMED`, minting with its reason — a halt-mask bit, or
 `UNARMED` when `mintRequiresArmed` holds and the tip is not ARMED (no bit is set then; the node
@@ -275,7 +278,14 @@ preferred when the node sends them, ycash-dd/ycash6 `fix/cancel-fields-2`);
 the attestor table (on rpcversion 8 with the attestor rules: the seat weight `seatWeight` ÷ 65,536 in YEC, an
 `evicted` mark on a WITHDRAWN record evicted from the full set, and the bond exit: a WITHDRAWN record whose bond is
 not frozen or spent unlocks at `statusHeight + bondMaturity`, not before its `bondLocktime`), with the ribbon's
-`attestors` state (the computed `bondMinZat` against its floor and cap, the seats and margins, the exit delay); state-hash
+`attestors` state (the computed `bondMinZat` against its floor and cap, the seats and margins, the exit delay); the
+ribbon's `attestor set` state (beta4: the set `yed_getinfo.upgrade.attestorSetId` names, or `none (YED off)` when it is
+null, with its bonded, eligible and seated members, their total bond and any frozen bonds from `yed_listattestors`; the
+set's own `bondmin`, `livenesswindow` and `maturity` are in the vault panel's ★ YED row) and `quotes` state (beta4,
+rpcversion 11: how many of the newest blocks carry a tag, v1 against v2 and by payout scheme; each quoting node's
+`yed_getinfo.miner.quoteAgeSeconds`, marked late past twice the 60–75 s `yed_setquote` cadence of decision D-11; per
+payout key on hover, the median seconds between its quote changes); a post-quantum fee payee in the transaction table
+carries its scheme; state-hash
 agreement per node and the refused blocks with their verdicts; the Yellowback
 transaction table (a refused mint's verdict, e.g. `mint-halted-unarmed`, carries an explanation
 on hover; `claim_release`, `claim_cancel` and `set_act` rows are the claim intent's two ends and
@@ -447,8 +457,21 @@ YecWallet or the CLI.
 
 ## rpcversion
 
-chain-viz models `yed_*` at **rpcversion 9 and 10** (`KNOWN_RPC_VERSION` and `MODELLED_RPC_VERSIONS` in
-`src/rpc.rs`; a mix of the two across the nodes warns). rpcversion 10 is beta3 (the workspace's
+chain-viz models `yed_*` at **rpcversion 9, 10 and 11** (`KNOWN_RPC_VERSION` and `MODELLED_RPC_VERSIONS` in
+`src/rpc.rs`). Any mix of those across the nodes is modelled too (a rollout passes through one; the ribbon names the
+versions without a warning); only a version outside them warns. rpcversion 11 is beta4's tag v2 (the workspace's
+`docs/plans/beta4/price-feed.md` §4.3, decisions D-8, D-10): a pool whose payout key is post-quantum emits a 49-byte
+v2 coinbase tag (`0x31` ‖ `"YED!"` ‖ `0x02` ‖ … ‖ payoutScheme ‖ payoutHash) beside the 36-byte v1 tag of a P2PKH
+pool, both valid side by side; `yed_gettag` gains `version` (1 or 2) and `payoutScheme` (`"p2pkh"`,
+`"slh-dsa-sha2-128s"`, `"fn-dsa-512"`), and every payee and payout address (`yed_gettag`, `yed_getinfo.miner`,
+`yed_listminers`, `yed_getfeepayee`, every `payee`) may be a plain post-quantum address of the network. No field is
+renamed and chain-viz relays the tag untyped: the chain panel's block badge marks a v2 tag and its tooltip gives the
+tag's version, scheme, sources and payout address; the revenue ledger keeps each block's tag version and scheme
+(`/api/revenue?by=block`: `tagVersion`, `payoutScheme`) and per payout key counts `tagsV1` / `tagsV2` with the key's
+`payoutScheme` (`by=payoutKey`; from its newest tag, else from the address, `payee_scheme` in `src/model/revenue.rs`),
+and the Per pool table marks a post-quantum key with its scheme. A 9 or 10 node's tags are all v1 and carry no
+`payoutScheme`. The quote cadence of decision D-11 (`yed_setquote` every 60–75 s) is read from
+`yed_getinfo.miner.quoteAgeSeconds`, which every modelled version reports. rpcversion 10 is beta3 (the workspace's
 `docs/plans/beta3/beta3-plan.md` R-1, decision B3-D5): no `yed_*` shape chain-viz reads changed; the one addition it
 shows is `getblock`'s `transparentPools`, the transparent value pool split by address type (`src/pools.rs`, every entry
 read by `id`, `pqscheme` or `module`, never by position): the block tooltip gives `transparent_ecc`,
@@ -501,6 +524,10 @@ paged and only when the vault counts change; `getblocksubsidy` once per block;
 answers `vault_getinfo`), per block: one `vault_getinfo`, one `set_list`, one `set_getinfo` per
 set (at most 16), and `vault_list` only when `vault_getinfo.statehash` moved. A ZMQ `hashtx` also wakes the mempool fetch,
 once per transaction entering the mempool and once per transaction of a connected block.
+A node that answered `yed_getinfo` or `vault_getinfo` with "method not found" (a stock node, or
+a regtest node before its restart with `-yellowbackattestorset`) is asked once more every 60
+polls and after any error (a restart), so a node that turns Yellowback on later is enriched
+from then on, the blocks it walked before included.
 `/api/health.rpcCalls` counts every method per node; `tests/yb_budget.rs` asserts the counts on
 a recorded run, and `qa/soak.sh <url> <pid> <minutes>` samples RSS, `seq` and the RPC rate of a
 running instance and fails on a rising RSS, an uneven rate or RPC-failure notes.

@@ -107,6 +107,12 @@ pub struct BlockLedger {
     /// `yed_gettag.payoutAddress` when the tag was found.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// rpcversion 11: the tag's `version` (1 for a P2PKH payout key, 2 for a post-quantum one) and
+    /// `payoutScheme`; a node before 11 reports version 1 and no scheme.
+    #[serde(rename = "tagVersion", skip_serializing_if = "Option::is_none")]
+    pub tag_version: Option<u64>,
+    #[serde(rename = "payoutScheme", skip_serializing_if = "Option::is_none")]
+    pub payout_scheme: Option<String>,
     pub rows: Vec<Row>,
     /// The Yellowback transactions attributed so far (`txid` → the summary shown per block).
     #[serde(rename = "ybTxs")]
@@ -195,6 +201,21 @@ pub fn encode_address(prefix: [u8; 2], hash: &[u8; 20]) -> String {
     let check = Sha256::digest(Sha256::digest(&payload));
     payload.extend_from_slice(&check[..4]);
     bs58::encode(payload).into_string()
+}
+
+/// The payout scheme of a payee address as `yed_gettag.payoutScheme` names it (rpcversion 11): a
+/// plain post-quantum address (`sqs…`/`sqf…`, the D-9 form) is `"slh-dsa-sha2-128s"` or
+/// `"fn-dsa-512"`, a 20-byte Base58Check address `"p2pkh"` (a fee payee is never P2SH, the
+/// beta4 payee rule); anything else (a not-yet-encoded `hash160:`/`pqkeyid:` key) is `None`.
+pub fn payee_scheme(addr: &str) -> Option<&'static str> {
+    if let Some((_, _, scheme, _)) = crate::pq::decode(addr) {
+        return match scheme {
+            crate::pq::SCHEME_SLH_DSA_SHA2_128S => Some("slh-dsa-sha2-128s"),
+            crate::pq::SCHEME_FN_DSA_512 => Some("fn-dsa-512"),
+            _ => None,
+        };
+    }
+    decode_address(addr).map(|_| "p2pkh")
 }
 
 /// The hash160 of a P2PKH script (`76 a9 14 <20> 88 ac`).
@@ -328,7 +349,7 @@ impl RevenueModel {
         if let Some(old) = self.blocks.remove(&height) {
             self.uncount(&old);
         }
-        let ledger = BlockLedger { hash: b.hash.clone(), miner, tag: None, rows, yb_txs: Vec::new() };
+        let ledger = BlockLedger { hash: b.hash.clone(), miner, rows, ..Default::default() };
         self.count(&ledger);
         let out = ledger.rows.iter().map(emitted).collect();
         self.blocks.insert(height, ledger);
@@ -345,6 +366,8 @@ impl RevenueModel {
         let Some(payout) = tag.get("payoutAddress").and_then(Value::as_str).filter(|_| found) else { return };
         self.learn_prefix(payout);
         let Some(b) = self.blocks.get_mut(&height).filter(|b| b.hash == hash) else { return };
+        b.tag_version = Some(tag.get("version").and_then(Value::as_u64).unwrap_or(1));
+        b.payout_scheme = tag.get("payoutScheme").and_then(Value::as_str).map(str::to_string);
         if b.tag.as_deref() == Some(payout) {
             return;
         }
@@ -639,7 +662,12 @@ impl RevenueModel {
         for k in keys {
             let mine = |r: &&Row| self.canonical(&r.payee) == k;
             let mined = blocks.iter().filter(|(_, b)| b.miner.as_deref().map(|m| self.canonical(m) == k).unwrap_or(false)).count();
-            let tags = blocks.iter().filter(|(_, b)| b.tag.as_deref() == Some(&k)).count();
+            let tagged: Vec<&BlockLedger> = blocks.iter().filter(|(_, b)| b.tag.as_deref() == Some(&k)).map(|(_, b)| *b).collect();
+            let tags = tagged.len();
+            // rpcversion 11: the tags by version (v1 P2PKH, v2 post-quantum) and the payee's scheme, from
+            // the newest tag when it names one, else from the address itself
+            let v2 = tagged.iter().filter(|b| b.tag_version == Some(2)).count();
+            let scheme = tagged.iter().rev().find_map(|b| b.payout_scheme.as_deref()).or_else(|| payee_scheme(&k));
             let fees: Vec<&Row> = all.iter().copied().filter(|r| r.kind == Kind::Enforcefee).filter(mine).collect();
             let subsidy: Vec<&Row> = all.iter().copied().filter(|r| r.kind == Kind::Subsidy).filter(mine).collect();
             let netfee: Vec<&Row> = all.iter().copied().filter(|r| r.kind == Kind::Netfee).filter(mine).collect();
@@ -649,7 +677,7 @@ impl RevenueModel {
             let row = miners.iter().find(|m| m.get("payoutAddress").and_then(Value::as_str) == Some(&k));
             out.push(json!({
                 "payee": k, "aliases": aliases,
-                "blocksMined": mined, "tags": tags, "timesSelected": fees.len(),
+                "blocksMined": mined, "tags": tags, "tagsV1": tags - v2, "tagsV2": v2, "payoutScheme": scheme, "timesSelected": fees.len(),
                 "enforcefee": money_of(&fees), "subsidy": money_of(&subsidy), "netfee": money_of(&netfee), "stockCoinbase": money_of(&stock),
                 "perTagZat": if tags > 0 { Some(fee_total / tags as i64) } else { None },
                 "perBlockZat": if mined > 0 { Some(fee_total / mined as i64) } else { None },
@@ -689,7 +717,7 @@ impl RevenueModel {
         let of = |k: Kind| money_of(&b.rows.iter().filter(|r| r.kind == k).collect::<Vec<_>>());
         let payees: BTreeSet<&str> = b.rows.iter().filter(|r| matches!(r.kind, Kind::Enforcefee | Kind::Attestfee)).map(|r| r.payee.as_str()).collect();
         json!({
-            "height": height, "hash": b.hash, "miner": b.miner, "tag": b.tag, "priceUsed": price(height),
+            "height": height, "hash": b.hash, "miner": b.miner, "tag": b.tag, "tagVersion": b.tag_version, "payoutScheme": b.payout_scheme, "priceUsed": price(height),
             "subsidy": of(Kind::Subsidy), "subsidyOther": of(Kind::SubsidyOther), "netfee": of(Kind::Netfee),
             "enforcefee": of(Kind::Enforcefee), "attestfee": of(Kind::Attestfee), "residual": of(Kind::Residual),
             "feePayees": payees, "ybTxs": b.yb_txs,
@@ -881,6 +909,39 @@ mod tests {
         let snap = m.snapshot(&price);
         assert_eq!(snap["byPayee"]["pool1"]["blocksMined"], 1, "aliases roll the coinbase address under the tag's key");
         assert_eq!(snap["totals"]["enforcefee"]["zat"], 50_000_000);
+    }
+
+    /// rpcversion 11 (beta4 tag v2): a pool with a post-quantum payout key tags v2 with its scheme, and its
+    /// fees are paid to the PQ address the node spells; the per-pool rollup counts v1 and v2 tags and names
+    /// the scheme, a v1-only key is "p2pkh", and a key known only from an address gets its scheme from it.
+    #[test]
+    fn tag_v2_and_pq_payees() {
+        let pq = crate::pq::encode("regtest", crate::pq::PqCoin::Yec, crate::pq::SCHEME_SLH_DSA_SHA2_128S, &[0x42; 32]).unwrap();
+        let fn_pq = crate::pq::encode("regtest", crate::pq::PqCoin::Yec, crate::pq::SCHEME_FN_DSA_512, &[0x43; 32]).unwrap();
+        assert_eq!(payee_scheme(&pq), Some("slh-dsa-sha2-128s"));
+        assert_eq!(payee_scheme(&fn_pq), Some("fn-dsa-512"));
+        assert_eq!(payee_scheme("smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4"), Some("p2pkh"));
+        assert_eq!(payee_scheme("hash160:0101010101010101010101010101010101010101"), None);
+        let mut m = RevenueModel::new(100);
+        for h in 30..=32u64 {
+            m.set_subsidy(h, &subsidy(3.0, 0.0, ""));
+            m.on_block(&block(h, &format!("h{}", h), vec![tx(&format!("cb{}", h), &[(3.0, p2pkh(1))])]), &[]);
+        }
+        m.on_tag(30, "h30", &json!({"found": true, "version": 1, "payoutScheme": "p2pkh", "payoutAddress": "smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4"}));
+        m.on_tag(31, "h31", &json!({"found": true, "version": 2, "payoutScheme": "slh-dsa-sha2-128s", "payoutAddress": pq}));
+        m.on_tag(32, "h32", &json!({"found": true, "version": 2, "payoutScheme": "slh-dsa-sha2-128s", "payoutAddress": pq}));
+        let q = m.query(30, 32, "payoutKey", &|_| None, &[json!({"payoutAddress": fn_pq, "eligible": true})], &[]);
+        let g = q["groups"].as_array().unwrap();
+        let by = |k: &str| g.iter().find(|x| x["payee"] == k).unwrap().clone();
+        assert_eq!((by(&pq)["tags"].clone(), by(&pq)["tagsV1"].clone(), by(&pq)["tagsV2"].clone(), by(&pq)["payoutScheme"].clone()), (json!(2), json!(0), json!(2), json!("slh-dsa-sha2-128s")));
+        let v1 = by("smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4");
+        assert_eq!((v1["tagsV1"].clone(), v1["tagsV2"].clone(), v1["payoutScheme"].clone()), (json!(1), json!(0), json!("p2pkh")));
+        assert_eq!(by(&fn_pq)["payoutScheme"], "fn-dsa-512", "a key seen only in yed_listminers: the scheme from its address");
+        let bl = m.query(31, 31, "block", &|_| None, &[], &[]);
+        assert_eq!((bl["groups"][0]["tagVersion"].clone(), bl["groups"][0]["payoutScheme"].clone()), (json!(2), json!("slh-dsa-sha2-128s")));
+        // a node before rpcversion 11 reports no version field on a found tag: v1, no scheme
+        m.on_tag(30, "h30", &json!({"found": true, "payoutAddress": "smJQihTy3t6QqGdNimrrWhN1aF8SbwrWmT4"}));
+        assert_eq!((m.block(30).unwrap().tag_version, m.block(30).unwrap().payout_scheme.clone()), (Some(1), None));
     }
 
     #[test]
