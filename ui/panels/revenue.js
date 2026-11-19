@@ -93,7 +93,9 @@ function renderTiles(b, s) {
 const M = { l: 56, r: 12, t: 10, b: 22 };
 function ticks(lo, hi, n) { const raw = (hi - lo) / n, p = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / p, step = (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(v); return out; }
 function renderBlocks(b) {
-  const el = clear($('rv-blocks')); const rows = b.groups || [];
+  // the bars follow the range even when the fetch was wider: the first one runs before any render knows the tip
+  // (from=0, the whole window) and stands until the next block
+  const el = clear($('rv-blocks')); const rows = local.range === 'all' ? b.groups || [] : (b.groups || []).slice(-Number(local.range));
   if (!rows.length) { el.append(svg('text', { class: 'empty', x: 20, y: 20 }, 'no blocks in range yet')); return; }
   const W = el.clientWidth || 800, H = 220; el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const stockOf = (r) => r.subsidy.zat + r.netfee.zat, ybOf = (r) => r.enforcefee.zat + r.attestfee.zat;
