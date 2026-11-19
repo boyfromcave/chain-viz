@@ -524,6 +524,10 @@ paged and only when the vault counts change; `getblocksubsidy` once per block;
 answers `vault_getinfo`), per block: one `vault_getinfo`, one `set_list`, one `set_getinfo` per
 set (at most 16), and `vault_list` only when `vault_getinfo.statehash` moved. A ZMQ `hashtx` also wakes the mempool fetch,
 once per transaction entering the mempool and once per transaction of a connected block.
+A node that answered `yed_getinfo` or `vault_getinfo` with "method not found" (a stock node, or
+a regtest node before its restart with `-yellowbackattestorset`) is asked once more every 60
+polls and after any error (a restart), so a node that turns Yellowback on later is enriched
+from then on, the blocks it walked before included.
 `/api/health.rpcCalls` counts every method per node; `tests/yb_budget.rs` asserts the counts on
 a recorded run, and `qa/soak.sh <url> <pid> <minutes>` samples RSS, `seq` and the RPC rate of a
 running instance and fails on a rising RSS, an uneven rate or RPC-failure notes.
